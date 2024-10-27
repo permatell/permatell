@@ -1,4 +1,5 @@
 local last_story_id = 3
+local STORY_POINTS_PROCESS_ADDRESS = "7At7V2gQjAcxzeXib6pNFIyKhdr-royg9Pbjrjo3b-Q"
 
 local stories = {
   ["1"] = {
@@ -120,6 +121,15 @@ local function generate_new_version_id(story)
   return tostring(max_id + 1)
 end
 
+local function send_story_points(address, points)
+  local result = ao.send({
+    Target = STORY_POINTS_PROCESS_ADDRESS,
+    Action = "AddStoryPoints",
+    address = address,
+    points = tostring(points)
+  })
+end
+
 Handlers.add("create_story",
   { Action = "CreateStory" },
   function(msg)
@@ -142,6 +152,8 @@ Handlers.add("create_story",
       }
     }
     
+    send_story_points(msg.From, 10)
+    
     ao.send({ Target = msg.From, Data = "Story created with ID: " .. story_id })
   end
 )
@@ -153,7 +165,7 @@ Handlers.add("create_story_version",
     if story then
       local new_version_id = generate_new_version_id(story)
       local current_version = story.versions[story.current_version]
-      
+      story.current_version = new_version_id
       story.versions[new_version_id] = {
         id = tonumber(new_version_id),
         title = msg.title or current_version.title,
@@ -164,7 +176,7 @@ Handlers.add("create_story_version",
         category = msg.category or current_version.category
       }
       
-      story.current_version = new_version_id
+      send_story_points(msg.From, 5)
       
       ao.send({ Target = msg.From, Data = "Story updated with new version: " .. new_version_id })
     else
@@ -224,6 +236,8 @@ Handlers.add("get_story",
     end
   end
 )
+
+
 
 
 

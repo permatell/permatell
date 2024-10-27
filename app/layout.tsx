@@ -4,6 +4,7 @@ import "./globals.css";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { StoriesProcessProvider } from "@/contexts/StoriesProcessContext";
 import { Navbar } from "@/components/ui/nav-bar";
+import { StoryPointsProcessProvider } from "@/contexts/StoryPointsProcessContext";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -32,14 +33,16 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <WalletProvider>
-          <StoriesProcessProvider>
-            <Navbar />
-            <main>
-              <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-                {children}
-              </div>
-            </main>
-          </StoriesProcessProvider>
+          <StoryPointsProcessProvider>
+            <StoriesProcessProvider>
+              <Navbar />
+              <main>
+                <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                  {children}
+                </div>
+              </main>
+            </StoriesProcessProvider>
+          </StoryPointsProcessProvider>
         </WalletProvider>
       </body>
     </html>

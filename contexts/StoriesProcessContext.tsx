@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 import { createDataItemSigner, connect } from "@permaweb/aoconnect";
 import { useWallet } from "@/contexts/WalletContext";
 import { Story, CurrentStory } from "@/interfaces/Story";
+import { useStoryPointsProcess } from "./StoryPointsProcessContext";
 
 const GATEWAY_URL = "https://arweave.net";
 const MU_URL = "https://mu.ao-testnet.xyz";
@@ -51,6 +52,7 @@ export const StoriesProcessProvider: React.FC<{
   const { address } = useWallet();
   const [stories, setStories] = useState<CurrentStory[]>([]);
   const [loading, setLoading] = useState(false);
+  const { getUserStoryPoints } = useStoryPointsProcess();
 
   const getSigner = () => {
     if (!address) {
@@ -74,6 +76,10 @@ export const StoriesProcessProvider: React.FC<{
       process: PROCESS_ID,
       tags,
     });
+
+    if (address) {
+      getUserStoryPoints(address);
+    }
 
     if (res.Messages && res.Messages.length > 0) {
       const data = res.Messages[0]?.Data;
