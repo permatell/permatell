@@ -97,3 +97,42 @@ body {
 .animation-delay-4000 {
   animation-delay: 4s;
 }
+
+.markdown-editor {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(8px);
+}
+
+.markdown-editor .rc-md-editor {
+  border-color: rgb(31, 41, 55) !important;
+  background-color: transparent !important;
+}
+
+.markdown-editor .rc-md-navigation {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+.markdown-editor .section-container {
+  background-color: transparent !important;
+}
+
+.markdown-editor .custom-html-style {
+  color: white !important;
+  background-color: transparent !important;
+}
+
+.markdown-editor textarea {
+  color: white !important;
+  background-color: transparent !important;
+}
+
+.markdown-editor .custom-html-style h1,
+.markdown-editor .custom-html-style h2,
+.markdown-editor .custom-html-style h3,
+.markdown-editor .custom-html-style h4,
+.markdown-editor .custom-html-style h5,
+.markdown-editor .custom-html-style h6,
+.markdown-editor .custom-html-style p,
+.markdown-editor .custom-html-style li {
+  color: white !important;
+}

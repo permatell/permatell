@@ -3,12 +3,10 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { FormField } from "@/components/ui/form-field";
-import { CardContainer } from "@/components/ui/card-container";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useWallet } from "@/contexts/WalletContext";
@@ -22,7 +20,7 @@ import {
 import { STORY_CATEGORIES } from "@/app/constants/categories";
 import { Separator } from "@/components/ui/separator";
 import { motion } from "framer-motion";
-import { Card } from "@/components/ui/card";
+import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
 
 export default function CreateStoryPage() {
   const { createStory, loading } = useStoriesProcess();
@@ -116,12 +114,10 @@ export default function CreateStoryPage() {
             >
               Content:
             </Label>
-            <Textarea
+            <CustomMarkdownEditor
               id="content"
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              required
-              className="h-48 bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
+              onChange={setContent}
             />
           </div>
 
@@ -163,13 +159,13 @@ export default function CreateStoryPage() {
           transition={{ delay: 0.4 }}
           className="md:w-1/3"
         >
-          <Card className="bg-black/50 backdrop-blur-md border border-gray-800/50 shadow-lg p-4">
+          <div className="bg-gradient-to-br from-black/50 to-[#0F0514]/50 backdrop-blur-md border border-gray-800/50 shadow-lg p-4 rounded-lg relative isolate">
             <img
               src={coverImageSrc}
               alt="Cover preview"
               className="w-full h-auto object-cover rounded-lg shadow-md"
             />
-          </Card>
+          </div>
         </motion.div>
       </div>
     </div>

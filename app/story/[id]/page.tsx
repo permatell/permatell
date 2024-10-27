@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
@@ -23,6 +22,8 @@ import { STORY_CATEGORIES } from "@/app/constants/categories";
 import { IoMdThumbsUp } from "react-icons/io";
 import { motion } from "framer-motion";
 import { Separator } from "@/components/ui/separator";
+import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
+import ReactMarkdown from "react-markdown";
 
 const StoryPage = () => {
   const {
@@ -35,7 +36,7 @@ const StoryPage = () => {
   const [story, setStory] = useState<Story | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
-  const [editedContent, setEditedContent] = useState("");
+  const [editedContent, setEditedContent] = useState<string>("");
   const [editedCoverImage, setEditedCoverImage] = useState("");
   const [editedCategory, setEditedCategory] = useState("");
   const { address: author } = useWallet();
@@ -44,8 +45,6 @@ const StoryPage = () => {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUpvoting, setIsUpvoting] = useState(false);
-
-  console.log(story);
 
   useEffect(() => {
     const storyId = params?.id;
@@ -233,11 +232,10 @@ const StoryPage = () => {
                 >
                   Content:
                 </Label>
-                <Textarea
+                <CustomMarkdownEditor
+                  id="content"
                   value={editedContent}
-                  onChange={(e) => setEditedContent(e.target.value)}
-                  className="h-48 bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
-                  disabled={isSaving || isRefreshing}
+                  onChange={setEditedContent}
                 />
               </div>
 
@@ -257,17 +255,27 @@ const StoryPage = () => {
                 />
               </div>
 
-              <Button
-                onClick={handleSave}
-                disabled={isSaving || !author}
-                className="w-full bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white border-none mt-8"
-              >
-                {isSaving
-                  ? "Saving..."
-                  : !author
-                  ? "Connect Wallet to Save"
-                  : "Save Changes"}
-              </Button>
+              <div className="flex gap-4 mt-8">
+                <Button
+                  onClick={handleSave}
+                  disabled={isSaving || !author}
+                  className="flex-1 bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white border-none"
+                >
+                  {isSaving
+                    ? "Saving..."
+                    : !author
+                    ? "Connect Wallet to Save"
+                    : "Save Changes"}
+                </Button>
+
+                <Button
+                  onClick={() => setIsEditing(false)}
+                  variant="outline"
+                  className="flex-1 bg-black/60 hover:bg-black/80 hover:text-gray-100 text-gray-300"
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-6">
@@ -322,9 +330,65 @@ const StoryPage = () => {
                   </div>
                 )}
               </div>
-              <p className="text-gray-300 whitespace-pre-wrap">
-                {currentVersion?.content}
-              </p>
+              <div className="prose prose-invert max-w-none text-white">
+                <ReactMarkdown
+                  components={{
+                    h1: ({ children }) => (
+                      <h1 className="text-3xl font-bold mb-4 text-white">
+                        {children}
+                      </h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="text-2xl font-bold mb-3 text-white">
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="text-xl font-bold mb-2 text-white">
+                        {children}
+                      </h3>
+                    ),
+                    h4: ({ children }) => (
+                      <h4 className="text-lg font-bold mb-2 text-white">
+                        {children}
+                      </h4>
+                    ),
+                    p: ({ children }) => (
+                      <p className="mb-4 text-gray-200">{children}</p>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="list-disc ml-6 mb-4 text-gray-200">
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="list-decimal ml-6 mb-4 text-gray-200">
+                        {children}
+                      </ol>
+                    ),
+                    blockquote: ({ children }) => (
+                      <blockquote className="border-l-4 border-gray-500 pl-4 italic my-4 text-gray-200">
+                        {children}
+                      </blockquote>
+                    ),
+                    a: ({ children, href }) => (
+                      <a
+                        href={href}
+                        className="text-blue-400 hover:text-blue-300 underline"
+                      >
+                        {children}
+                      </a>
+                    ),
+                    code: ({ children }) => (
+                      <code className="bg-gray-800 text-gray-200 px-1 rounded">
+                        {children}
+                      </code>
+                    ),
+                  }}
+                >
+                  {currentVersion?.content || ""}
+                </ReactMarkdown>
+              </div>
             </div>
           )}
         </div>

@@ -83,7 +83,6 @@ export const StoryPointsProcessProvider: React.FC<{
           { name: "Action", value: "GetUserStoryPoints" },
           { name: "address", value: address },
         ]);
-        console.log(result);
         setUserStoryPoints(result.points);
       } catch (error) {
         console.error(error);
