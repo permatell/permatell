@@ -9,3 +9,10 @@ export interface Story {
   versions: { [key: string]: StoryVersion };
   current_version: string;
 }
+
+export interface CurrentStory {
+  id: string;
+  is_public: boolean;
+  current_version: string;
+  version_data: StoryVersion;
+}

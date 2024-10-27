@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { createDataItemSigner, connect } from "@permaweb/aoconnect";
 import { useWallet } from "@/contexts/WalletContext";
-import { Story } from "@/types/Story";
+import { Story, CurrentStory } from "@/interfaces/Story";
 
 const GATEWAY_URL = "https://arweave.net";
 const MU_URL = "https://mu.ao-testnet.xyz";
@@ -22,12 +22,14 @@ interface StoriesProcessContextType {
     content: string;
     is_public: boolean;
     cover_image?: string;
+    category?: string;
   }) => Promise<void>;
   createStoryVersion: (payload: {
     story_id: string;
     title: string;
     content: string;
     cover_image: string;
+    category?: string;
   }) => Promise<void>;
   getStories: () => Promise<void>;
   getStory: (payload: { story_id: string }) => Promise<Story | null>;
@@ -35,7 +37,7 @@ interface StoriesProcessContextType {
     story_id: string;
     version_id: string;
   }) => Promise<void>;
-  stories: Story[];
+  stories: CurrentStory[];
   loading: boolean;
 }
 
@@ -47,7 +49,7 @@ export const StoriesProcessProvider: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
   const { address } = useWallet();
-  const [stories, setStories] = useState<Story[]>([]);
+  const [stories, setStories] = useState<CurrentStory[]>([]);
   const [loading, setLoading] = useState(false);
 
   const getSigner = () => {
@@ -90,6 +92,7 @@ export const StoriesProcessProvider: React.FC<{
     content: string;
     is_public: boolean;
     cover_image?: string;
+    category?: string;
   }) => {
     setLoading(true);
     try {
@@ -99,6 +102,7 @@ export const StoriesProcessProvider: React.FC<{
         { name: "content", value: payload.content },
         { name: "is_public", value: payload.is_public ? "true" : "false" },
         { name: "cover_image", value: payload.cover_image || "" },
+        { name: "category", value: payload.category || "" },
       ]);
       await getStories();
     } catch (error) {
@@ -113,6 +117,7 @@ export const StoriesProcessProvider: React.FC<{
     title: string;
     content: string;
     cover_image: string;
+    category?: string;
   }) => {
     setLoading(true);
     try {
@@ -122,6 +127,7 @@ export const StoriesProcessProvider: React.FC<{
         { name: "title", value: payload.title || "" },
         { name: "content", value: payload.content || "" },
         { name: "cover_image", value: payload.cover_image || "" },
+        { name: "category", value: payload.category || "" },
       ]);
       await getStories();
     } catch (error) {

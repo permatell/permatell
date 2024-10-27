@@ -8,13 +8,20 @@ import Link from "next/link";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { Spinner } from "@/components/ui/spinner";
-
-const categories = ["Adventure", "Romance", "Sci-Fi"];
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { STORY_CATEGORIES } from "../constants/categories";
 
 const Dashboard = () => {
   const { stories, getStories, loading } = useStoriesProcess();
   const { address } = useWallet();
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
 
   useEffect(() => {
     if (stories.length === 0 && !loading) {
@@ -22,20 +29,40 @@ const Dashboard = () => {
     }
   }, [getStories, stories.length, loading]);
 
-  const filteredStories = stories.filter((story) =>
-    story.title.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredStories = stories.filter(
+    (story) =>
+      story.version_data.title
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) &&
+      (selectedCategory === "All" ||
+        story.version_data.category === selectedCategory)
   );
 
   return (
     <div className="container mx-auto py-6 px-4">
       <h1 className="text-3xl font-bold mb-4">Discover Stories</h1>
 
-      <Input
-        placeholder="Search for stories..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        className="mb-6"
-      />
+      <div className="flex gap-4 mb-6">
+        <Input
+          placeholder="Search for stories..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="flex-grow"
+        />
+        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Select category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All">All Categories</SelectItem>
+            {STORY_CATEGORIES.map((category) => (
+              <SelectItem key={category} value={category}>
+                {category}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <div className="mb-8">
         {address ? (
@@ -46,17 +73,6 @@ const Dashboard = () => {
           <Button disabled>Connect Wallet to Create a Story</Button>
         )}
       </div>
-
-      <section className="mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Categories</h2>
-        <div className="flex space-x-4">
-          {categories.map((category) => (
-            <Button key={category} variant="outline">
-              {category}
-            </Button>
-          ))}
-        </div>
-      </section>
 
       {loading ? (
         <div className="flex justify-center items-center py-10">
@@ -71,20 +87,24 @@ const Dashboard = () => {
                 <Card key={story.id} className="overflow-hidden flex flex-col">
                   <div className="relative h-48">
                     <img
-                      src={story.cover_image || "/no_cover.webp"}
-                      alt={`Cover for ${story.title}`}
+                      src={story.version_data.cover_image || "/no_cover.webp"}
+                      alt={`Cover for ${story.version_data.title}`}
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                   </div>
                   <CardHeader>
-                    <CardTitle>{story.title}</CardTitle>
+                    <CardTitle>{story.version_data.title}</CardTitle>
                   </CardHeader>
                   <CardContent className="flex flex-col flex-grow">
                     <p className="text-sm text-gray-500 mb-2">
                       Last contribution:{" "}
                       <b>
-                        {story.author.slice(0, 6)}...{story.author.slice(-4)}
+                        {story.version_data.author.slice(0, 6)}...
+                        {story.version_data.author.slice(-4)}
                       </b>
+                    </p>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Category: <b>{story.version_data.category}</b>
                     </p>
                     <div className="flex-grow" />
                     <Link href={`/story/${story.id}`} className="mt-auto">

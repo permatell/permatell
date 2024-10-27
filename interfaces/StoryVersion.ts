@@ -1,3 +1,5 @@
+import { StoryCategory } from "@/types/StoryCategory";
+
 export interface StoryVersion {
   id: number;
   title: string;
@@ -5,4 +7,5 @@ export interface StoryVersion {
   cover_image: string;
   author: string;
   timestamp: string;
+  category: StoryCategory;
 }

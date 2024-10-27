@@ -7,11 +7,20 @@ import { Button } from "@/components/ui/button";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Story } from "@/types/Story";
 import { useWallet } from "@/contexts/WalletContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import { StoryVersion } from "@/types/StoryVersion";
+import { Story } from "@/interfaces/Story";
+import { StoryVersion } from "@/interfaces/StoryVersion";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { STORY_CATEGORIES } from "@/app/constants/categories";
 
 const StoryPage = () => {
   const { getStory, createStoryVersion, revertStoryToVersion } =
@@ -22,11 +31,14 @@ const StoryPage = () => {
   const [editedTitle, setEditedTitle] = useState("");
   const [editedContent, setEditedContent] = useState("");
   const [editedCoverImage, setEditedCoverImage] = useState("");
+  const [editedCategory, setEditedCategory] = useState("");
   const { address: author } = useWallet();
   const [isSaving, setIsSaving] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  console.log(story);
 
   useEffect(() => {
     const storyId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -50,6 +62,7 @@ const StoryPage = () => {
         setEditedTitle(currentVersion.title);
         setEditedContent(currentVersion.content);
         setEditedCoverImage(currentVersion.cover_image);
+        setEditedCategory(currentVersion.category || "Uncategorized");
       }
     } catch (error) {
       console.error("Error fetching story:", error);
@@ -74,6 +87,7 @@ const StoryPage = () => {
         title: editedTitle,
         content: editedContent,
         cover_image: editedCoverImage,
+        category: editedCategory ?? "Uncategorized",
       });
 
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -132,30 +146,62 @@ const StoryPage = () => {
         <Card className="p-6 h-full">
           <CardHeader>
             <div className="flex justify-between items-start">
-              <div>
+              <div className="w-full pr-6">
                 {isEditing ? (
-                  <Input
-                    value={editedTitle}
-                    onChange={(e) => setEditedTitle(e.target.value)}
-                    className="text-2xl font-bold"
-                    disabled={isSaving || isRefreshing}
-                  />
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="title">Title:</Label>
+                      <Input
+                        id="title"
+                        value={editedTitle}
+                        onChange={(e) => setEditedTitle(e.target.value)}
+                        className="text-2xl font-bold"
+                        disabled={isSaving || isRefreshing}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="category" className="mb-2 block">
+                        Category:
+                      </Label>
+                      <Select
+                        value={editedCategory}
+                        onValueChange={setEditedCategory}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {STORY_CATEGORIES.map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 ) : (
-                  <CardTitle>{currentVersion?.title}</CardTitle>
+                  <>
+                    <CardTitle>{currentVersion?.title}</CardTitle>
+                    <div className="text-sm text-gray-500 mt-2">
+                      <p>Version: {story?.current_version}</p>
+                      <p>
+                        Category: {currentVersion?.category || "Uncategorized"}
+                      </p>
+                      <p>Public: {story?.is_public ? "Yes" : "No"}</p>
+                      <p>
+                        Author:{" "}
+                        {currentVersion?.author
+                          ? `${currentVersion.author.slice(
+                              0,
+                              6
+                            )}...${currentVersion.author.slice(-4)}`
+                          : "Unknown"}
+                      </p>
+                      <p>Date: {formatDate(currentVersion?.timestamp || 0)}</p>
+                    </div>
+                  </>
                 )}
-                <div className="text-sm text-gray-500 mt-2">
-                  <p>Version: {story?.current_version}</p>
-                  <p>
-                    Author:{" "}
-                    {currentVersion?.author
-                      ? `${currentVersion.author.slice(
-                          0,
-                          6
-                        )}...${currentVersion.author.slice(-4)}`
-                      : "Unknown"}
-                  </p>
-                  <p>Date: {formatDate(currentVersion?.timestamp || 0)}</p>
-                </div>
               </div>
               <img
                 src={
@@ -164,7 +210,7 @@ const StoryPage = () => {
                     : currentVersion?.cover_image || "/no_cover.webp"
                 }
                 alt="Story cover"
-                className="rounded w-[200px] h-[150px] object-cover"
+                className="rounded w-[200px] h-[150px] object-cover ml-6"
               />
             </div>
           </CardHeader>
@@ -206,9 +252,13 @@ const StoryPage = () => {
                 <Button
                   onClick={handleEdit}
                   className="mt-4"
-                  disabled={!author}
+                  disabled={!author || isReverting}
                 >
-                  {!author ? "Connect Wallet to Edit" : "Edit Story"}
+                  {!author
+                    ? "Connect Wallet to Edit"
+                    : isReverting
+                    ? "Reverting..."
+                    : "Edit Story"}
                 </Button>
               )}
             </div>
@@ -222,10 +272,10 @@ const StoryPage = () => {
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[600px] pr-4">
-              <ul className="relative border-l border-gray-200">
+              <ul className="relative border-l border-gray-200 ml-2">
                 {sortedVersions.map((version: StoryVersion) => (
-                  <li key={version.id} className="mb-10 ml-4">
-                    <div className="absolute w-3 h-3 bg-blue-500 rounded-full -left-1.5 border border-white"></div>
+                  <li key={version.id} className="mb-10 ml-6">
+                    <div className="absolute w-3 h-3 bg-black rounded-full -left-[7px] border border-white"></div>
                     <div className="p-2">
                       <div className="flex justify-between items-center mb-2">
                         <p className="font-semibold text-lg">
@@ -247,24 +297,22 @@ const StoryPage = () => {
                             : "Unknown"}
                         </p>
                       </div>
-                      {version && story && (
-                        <Button
-                          onClick={() => handleRevert(version.id)}
-                          className="w-full text-xs py-1"
-                          variant="outline"
-                          disabled={
-                            isReverting ||
-                            String(version.id) === story.current_version ||
-                            !author
-                          }
-                        >
-                          {isReverting
-                            ? "Processing..."
-                            : !author
-                            ? "Connect to Revert"
-                            : "Revert to This Version"}
-                        </Button>
-                      )}
+                      {version &&
+                        story &&
+                        String(version.id) !== story.current_version && (
+                          <Button
+                            onClick={() => handleRevert(version.id)}
+                            className="w-full text-xs py-1"
+                            variant="outline"
+                            disabled={isReverting || !author}
+                          >
+                            {isReverting
+                              ? "Processing..."
+                              : !author
+                              ? "Connect to Revert"
+                              : "Revert to This Version"}
+                          </Button>
+                        )}
                     </div>
                   </li>
                 ))}
