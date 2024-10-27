@@ -5,6 +5,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { FaUser, FaStar } from "react-icons/fa";
 import { Spinner } from "@/components/ui/spinner";
+import { motion } from "framer-motion";
+import { PageHeader } from "@/components/ui/page-header";
 
 const AuthorBoard: React.FC = () => {
   const { getAllStoryPoints, allUsersStoryPoints, loading } =
@@ -34,36 +36,43 @@ const AuthorBoard: React.FC = () => {
       case 2:
         return "text-amber-600";
       default:
-        return "text-black";
+        return "text-white/70";
     }
   };
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Author Leaderboard</h1>
+      <PageHeader title="Author Leaderboard" />
+
       <Input
         type="text"
         placeholder="Search by address"
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
-        className="mb-6"
+        className="mb-6 bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
       />
+
       {loading ? (
         <div className="flex justify-center items-center">
-          <Spinner />
+          <Spinner className="text-purple-500" />
         </div>
       ) : sortedAuthors.length > 0 ? (
         <div className="space-y-4">
           {sortedAuthors.map(([address, points], index) => (
-            <div
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
               key={address}
-              className="flex items-center space-x-4 p-4 bg-gray-100 rounded-lg"
+              className="flex items-center space-x-4 p-4 bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-gray-800/50 rounded-lg shadow-lg hover:shadow-purple-500/20 transition-all duration-300"
             >
-              <span className="font-bold">{index + 1}.</span>
-              <Avatar className="h-10 w-10 bg-gray-300 flex items-center justify-center">
-                <FaUser className="text-gray-600" />
+              <span className="font-bold text-white/90">{index + 1}.</span>
+              <Avatar className="h-10 w-10 bg-black/60 flex items-center justify-center">
+                <FaUser className="text-gray-400" />
               </Avatar>
-              <span className="flex-grow font-mono text-sm">{address}</span>
+              <span className="flex-grow font-mono text-sm text-gray-300">
+                {address}
+              </span>
               <div className="flex items-center space-x-1">
                 <FaStar
                   size={16}
@@ -73,7 +82,7 @@ const AuthorBoard: React.FC = () => {
                   {points}
                 </span>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       ) : (

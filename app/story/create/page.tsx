@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
+import { PageHeader } from "@/components/ui/page-header";
+import { FormField } from "@/components/ui/form-field";
+import { CardContainer } from "@/components/ui/card-container";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -18,6 +21,8 @@ import {
 } from "@/components/ui/select";
 import { STORY_CATEGORIES } from "@/app/constants/categories";
 import { Separator } from "@/components/ui/separator";
+import { motion } from "framer-motion";
+import { Card } from "@/components/ui/card";
 
 export default function CreateStoryPage() {
   const { createStory, loading } = useStoriesProcess();
@@ -49,30 +54,41 @@ export default function CreateStoryPage() {
   const coverImageSrc = coverImage || "/no_cover.webp";
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Create a New Story</h1>
-      <div className="flex flex-col md:flex-row gap-8 md:gap-8">
-        <form onSubmit={handleSubmit} className="space-y-4 flex-1">
-          <div>
-            <Label htmlFor="title">Title:</Label>
+    <div className="container mx-auto py-6 px-4">
+      <PageHeader title="Create a New Story" />
+
+      <div className="flex flex-col md:flex-row gap-8 md:gap-12">
+        <motion.form
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          onSubmit={handleSubmit}
+          className="space-y-6 flex-1"
+        >
+          <FormField label="Title:" htmlFor="title">
             <Input
               type="text"
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
+              className="bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
             />
-          </div>
-          <div className="flex items-end space-x-4">
+          </FormField>
+
+          <div className="flex items-start space-x-8">
             <div className="flex-1">
-              <Label htmlFor="category" className="mb-2 block">
+              <Label
+                htmlFor="category"
+                className="text-gray-200 text-lg mb-2 block"
+              >
                 Category:
               </Label>
               <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full bg-black/40 backdrop-blur-md border-gray-800 text-gray-400">
                   <SelectValue placeholder="Select a category" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="border-gray-800">
                   {STORY_CATEGORIES.map((cat) => (
                     <SelectItem key={cat} value={cat}>
                       {cat}
@@ -81,39 +97,55 @@ export default function CreateStoryPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center space-x-2 h-10">
+            <div className="flex items-center space-x-2 pt-8">
               <Checkbox
                 id="isPublic"
                 checked={isPublic}
                 onCheckedChange={(checked) => setIsPublic(checked as boolean)}
               />
-              <Label htmlFor="isPublic">Make this story public</Label>
+              <Label htmlFor="isPublic" className="text-gray-200">
+                Make this story public
+              </Label>
             </div>
           </div>
+
           <div>
-            <Label htmlFor="content">Content:</Label>
+            <Label
+              htmlFor="content"
+              className="text-gray-200 text-lg mb-2 block"
+            >
+              Content:
+            </Label>
             <Textarea
               id="content"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               required
-              className="h-32"
+              className="h-48 bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
             />
           </div>
+
           <div>
-            <Label htmlFor="coverImage">Cover Image URL:</Label>
+            <Label
+              htmlFor="coverImage"
+              className="text-gray-200 text-lg mb-2 block"
+            >
+              Cover Image URL:
+            </Label>
             <Input
               type="url"
               id="coverImage"
               value={coverImage}
               onChange={(e) => setCoverImage(e.target.value)}
               placeholder="https://example.com/image.jpg"
+              className="bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
             />
           </div>
+
           <Button
             type="submit"
             disabled={loading || !address}
-            className="w-full"
+            className="w-full bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white border-none mt-8"
           >
             {!address
               ? "Connect Wallet to Create"
@@ -121,15 +153,24 @@ export default function CreateStoryPage() {
               ? "Creating..."
               : "Create Story"}
           </Button>
-        </form>
+        </motion.form>
+
         <Separator orientation="vertical" className="hidden md:block h-auto" />
-        <div className="md:w-1/3">
-          <img
-            src={coverImageSrc}
-            alt="Cover preview"
-            className="w-full h-auto object-cover rounded-lg shadow-md"
-          />
-        </div>
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.4 }}
+          className="md:w-1/3"
+        >
+          <Card className="bg-black/50 backdrop-blur-md border border-gray-800/50 shadow-lg p-4">
+            <img
+              src={coverImageSrc}
+              alt="Cover preview"
+              className="w-full h-auto object-cover rounded-lg shadow-md"
+            />
+          </Card>
+        </motion.div>
       </div>
     </div>
   );

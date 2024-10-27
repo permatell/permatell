@@ -30,14 +30,21 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-black`}
       >
+        <div className="fixed inset-0 w-full h-full">
+          <div className="absolute w-full h-[800vh] opacity-50">
+            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-gradient-to-r from-purple-500/30 to-cyan-500/30 blur-3xl animate-blob" />
+            <div className="fixed top-1/2 left-1/3 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-gradient-to-r from-rose-500/30 to-orange-500/30 blur-3xl animate-blob animation-delay-2000" />
+            <div className="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] h-[450px] rounded-full bg-gradient-to-r from-blue-500/30 to-emerald-500/30 blur-3xl animate-blob animation-delay-4000" />
+          </div>
+        </div>
         <WalletProvider>
           <StoryPointsProcessProvider>
             <StoriesProcessProvider>
               <Navbar />
               <main>
-                <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 relative">
                   {children}
                 </div>
               </main>

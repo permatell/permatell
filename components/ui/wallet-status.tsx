@@ -20,13 +20,8 @@ export const WalletStatus: React.FC = () => {
   return (
     <div className="flex items-center gap-4">
       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-      <span className="text-sm font-medium">{shortenedAddress}</span>
-      <Button
-        onClick={disconnectWallet}
-        variant="outline"
-        size="sm"
-        disabled={loading}
-      >
+      <div className="text-white">{shortenedAddress}</div>
+      <Button onClick={disconnectWallet} variant="default" disabled={loading}>
         {loading ? "Disconnecting..." : "Disconnect"}
       </Button>
     </div>

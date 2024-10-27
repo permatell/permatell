@@ -9,7 +9,7 @@ const Spinner = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
   <div className={cn("flex justify-center items-center", className || "")}>
-    <ImSpinner8 className="animate-spin text-4xl text-gray-900" />
+    <ImSpinner8 className="animate-spin text-4xl text-white/80" />
   </div>
 ));
 
