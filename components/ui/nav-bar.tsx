@@ -42,7 +42,7 @@ export function Navbar() {
               <div className="flex items-center space-x-1 text-yellow-500">
                 <FaStar size={20} className="flex-shrink-0" />
                 <span className="font-semibold text-lg leading-none flex items-center mt-[2px]">
-                  : {userStoryPoints}
+                  {userStoryPoints}
                 </span>
               </div>
               <div className="h-6 w-px bg-gray-300"></div>

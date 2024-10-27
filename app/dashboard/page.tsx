@@ -40,7 +40,12 @@ const Dashboard = () => {
 
   return (
     <div className="container mx-auto py-6 px-4">
-      <h1 className="text-3xl font-bold mb-4">Discover Stories</h1>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-3xl font-bold">Discover Stories</h1>
+        <Link href="/author-board">
+          <Button variant="outline">Author Board</Button>
+        </Link>
+      </div>
 
       <div className="flex gap-4 mb-6">
         <Input
