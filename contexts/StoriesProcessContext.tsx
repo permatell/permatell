@@ -40,6 +40,10 @@ interface StoriesProcessContextType {
   }) => Promise<void>;
   stories: CurrentStory[];
   loading: boolean;
+  upvoteStoryVersion: (payload: {
+    story_id: string;
+    version_id: string;
+  }) => Promise<void>;
 }
 
 const StoriesProcessContext = createContext<
@@ -202,6 +206,25 @@ export const StoriesProcessProvider: React.FC<{
     }
   };
 
+  const upvoteStoryVersion = async (payload: {
+    story_id: string;
+    version_id: string;
+  }): Promise<void> => {
+    setLoading(true);
+    try {
+      await sendMessage([
+        { name: "Action", value: "UpvoteStoryVersion" },
+        { name: "story_id", value: payload.story_id },
+        { name: "version_id", value: payload.version_id },
+      ]);
+      await getStories();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const value: StoriesProcessContextType = {
     createStory,
     createStoryVersion,
@@ -210,6 +233,7 @@ export const StoriesProcessProvider: React.FC<{
     revertStoryToVersion,
     stories,
     loading,
+    upvoteStoryVersion,
   };
 
   return (

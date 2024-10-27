@@ -16,18 +16,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { STORY_CATEGORIES } from "../constants/categories";
+import { IoMdThumbsUp } from "react-icons/io";
 
 const Dashboard = () => {
   const { stories, getStories, loading } = useStoriesProcess();
   const { address } = useWallet();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [featuredStory, setFeaturedStory] = useState<any>(null);
 
   useEffect(() => {
     if (stories.length === 0 && !loading) {
       getStories();
     }
   }, [getStories, stories.length, loading]);
+
+  useEffect(() => {
+    if (stories.length > 0) {
+      const highestVotedStory = stories.reduce((prev, current) =>
+        prev.version_data.votes > current.version_data.votes ? prev : current
+      );
+      setFeaturedStory(highestVotedStory);
+    }
+  }, [stories]);
 
   const filteredStories = stories.filter(
     (story) =>
@@ -46,6 +57,41 @@ const Dashboard = () => {
           <Button variant="outline">Author Board</Button>
         </Link>
       </div>
+
+      {featuredStory && (
+        <Card className="mb-8 overflow-hidden">
+          <div className="md:flex">
+            <div className="md:w-1/3 h-64 md:h-auto relative">
+              <img
+                src={featuredStory.version_data.cover_image || "/no_cover.webp"}
+                alt={`Cover for ${featuredStory.version_data.title}`}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            </div>
+            <div className="md:w-2/3 p-6">
+              <h2 className="text-2xl font-bold mb-2">Featured Story</h2>
+              <CardTitle className="text-2xl mb-2">
+                {featuredStory.version_data.title}
+              </CardTitle>
+              <p className="text-gray-600 mb-4">
+                {featuredStory.version_data.description}
+              </p>
+              <p className="text-sm text-gray-500 mb-4">
+                {featuredStory.version_data.content.slice(0, 150)}...
+              </p>
+              <div className="flex items-center mb-4">
+                <IoMdThumbsUp size={20} className="text-yellow-500 mr-2" />
+                <span className="font-semibold">
+                  {featuredStory.version_data.votes} votes
+                </span>
+              </div>
+              <Link href={`/story/${featuredStory.id}`}>
+                <Button size="lg">Read Featured Story</Button>
+              </Link>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="flex gap-4 mb-6">
         <Input
@@ -89,7 +135,16 @@ const Dashboard = () => {
           {filteredStories.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredStories.map((story) => (
-                <Card key={story.id} className="overflow-hidden flex flex-col">
+                <Card
+                  key={story.id}
+                  className="overflow-hidden flex flex-col relative"
+                >
+                  <div className="absolute top-2 right-2 bg-white rounded-full p-2 shadow-md flex items-center justify-center">
+                    <IoMdThumbsUp size={16} className="text-yellow-500 mr-1" />
+                    <span className="text-sm font-semibold">
+                      {story.version_data.votes}
+                    </span>
+                  </div>
                   <div className="relative h-48">
                     <img
                       src={story.version_data.cover_image || "/no_cover.webp"}
@@ -110,6 +165,9 @@ const Dashboard = () => {
                     </p>
                     <p className="text-sm text-gray-500 mb-2">
                       Category: <b>{story.version_data.category}</b>
+                    </p>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Votes: <b>{story.version_data.votes}</b>
                     </p>
                     <div className="flex-grow" />
                     <Link href={`/story/${story.id}`} className="mt-auto">

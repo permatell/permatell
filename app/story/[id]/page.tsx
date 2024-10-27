@@ -21,10 +21,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { STORY_CATEGORIES } from "@/app/constants/categories";
+import { IoMdThumbsUp } from "react-icons/io";
 
 const StoryPage = () => {
-  const { getStory, createStoryVersion, revertStoryToVersion } =
-    useStoriesProcess();
+  const {
+    getStory,
+    createStoryVersion,
+    revertStoryToVersion,
+    upvoteStoryVersion,
+  } = useStoriesProcess();
   const params = useParams();
   const [story, setStory] = useState<Story | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -37,15 +42,16 @@ const StoryPage = () => {
   const [isReverting, setIsReverting] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isUpvoting, setIsUpvoting] = useState(false);
 
   console.log(story);
 
   useEffect(() => {
-    const storyId = Array.isArray(params.id) ? params.id[0] : params.id;
+    const storyId = params?.id;
     if (storyId) {
-      fetchStory(storyId);
+      fetchStory(Array.isArray(storyId) ? storyId[0] : storyId);
     }
-  }, [params.id]);
+  }, [params?.id]);
 
   const fetchStory = async (storyId: string) => {
     if (isInitialLoading) {
@@ -131,6 +137,24 @@ const StoryPage = () => {
       )
     : [];
   const currentVersion = story ? story.versions[story.current_version] : null;
+
+  const handleUpvote = async () => {
+    if (!author || !story) {
+      return;
+    }
+    setIsUpvoting(true);
+    try {
+      await upvoteStoryVersion({
+        story_id: story.id,
+        version_id: story.current_version,
+      });
+      await fetchStory(story.id);
+    } catch (error) {
+      console.error("Error upvoting story:", error);
+    } finally {
+      setIsUpvoting(false);
+    }
+  };
 
   if (isInitialLoading) {
     return <div>Loading...</div>;
@@ -235,32 +259,49 @@ const StoryPage = () => {
             ) : (
               <p>{currentVersion?.content}</p>
             )}
-            <div className="border-t border-gray-200 mt-4 pt-4">
-              {isRefreshing ? (
-                <div className="flex justify-center">
-                  <Spinner className="w-6 h-6" />
-                </div>
-              ) : isEditing ? (
-                <Button onClick={handleSave} disabled={isSaving || !author}>
-                  {isSaving
-                    ? "Saving..."
-                    : !author
-                    ? "Connect Wallet to Save"
-                    : "Save Changes"}
-                </Button>
-              ) : (
+            <div className="border-t border-gray-200 mt-4 pt-4 flex justify-between items-center">
+              <div>
+                {isRefreshing ? (
+                  <div className="flex justify-center">
+                    <Spinner className="w-6 h-6" />
+                  </div>
+                ) : isEditing ? (
+                  <Button onClick={handleSave} disabled={isSaving || !author}>
+                    {isSaving
+                      ? "Saving..."
+                      : !author
+                      ? "Connect Wallet to Save"
+                      : "Save Changes"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleEdit}
+                    disabled={!author || isReverting}
+                  >
+                    {!author
+                      ? "Connect Wallet to Edit"
+                      : isReverting
+                      ? "Reverting..."
+                      : "Edit Story"}
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-sm">
+                  {currentVersion?.votes || 0} votes
+                </span>
+                <div className="h-4 w-px bg-gray-300"></div>
                 <Button
-                  onClick={handleEdit}
-                  className="mt-4"
-                  disabled={!author || isReverting}
+                  onClick={handleUpvote}
+                  disabled={!author || isUpvoting}
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center"
                 >
-                  {!author
-                    ? "Connect Wallet to Edit"
-                    : isReverting
-                    ? "Reverting..."
-                    : "Edit Story"}
+                  <IoMdThumbsUp size={16} />
+                  <span>{isUpvoting ? "Upvoting..." : "Upvote"}</span>
                 </Button>
-              )}
+              </div>
             </div>
           </CardContent>
         </Card>

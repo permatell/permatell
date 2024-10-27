@@ -8,4 +8,5 @@ export interface StoryVersion {
   author: string;
   timestamp: string;
   category: StoryCategory;
+  votes: number;
 }

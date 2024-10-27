@@ -4,6 +4,7 @@ import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { FaUser, FaStar } from "react-icons/fa";
+import { Spinner } from "@/components/ui/spinner";
 
 const AuthorBoard: React.FC = () => {
   const { getAllStoryPoints, allUsersStoryPoints, loading } =
@@ -49,7 +50,7 @@ const AuthorBoard: React.FC = () => {
       />
       {loading ? (
         <div className="flex justify-center items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+          <Spinner />
         </div>
       ) : sortedAuthors.length > 0 ? (
         <div className="space-y-4">

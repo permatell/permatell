@@ -14,6 +14,7 @@ local stories = {
         cover_image = "https://s2idtqeysv4q6mzfp464rbvut45la3kcpavugxztkwsodxyvtgkq.arweave.net/lpA5wJiVeQ8zJX89yIa0nzqwbUJ4K0NfM1Wk4d8VmZU",
         author = "jK8nX2pQrS7tY9mZ3vB1cL4fG6hD5wA0uE",
         category = "Uncategorized",
+        votes = 1,
         timestamp = "1679823456"
       },
       ["2"] = {
@@ -23,6 +24,7 @@ local stories = {
         cover_image = "https://s2idtqeysv4q6mzfp464rbvut45la3kcpavugxztkwsodxyvtgkq.arweave.net/lpA5wJiVeQ8zJX89yIa0nzqwbUJ4K0NfM1Wk4d8VmZU",
         author = "jK8nX2pQrS7tY9mZ3vB1cL4fG6hD5wA0uE",
         category = "Uncategorized",
+        votes = 2,
         timestamp = "1680428657"
       },
       ["3"] = {
@@ -32,6 +34,7 @@ local stories = {
         cover_image = "https://s2idtqeysv4q6mzfp464rbvut45la3kcpavugxztkwsodxyvtgkq.arweave.net/lpA5wJiVeQ8zJX89yIa0nzqwbUJ4K0NfM1Wk4d8VmZU",
         author = "jK8nX2pQrS7tY9mZ3vB1cL4fG6hD5wA0uE",
         category = "Uncategorized",
+        votes = 1,
         timestamp = "1681033858"
       }
     }
@@ -48,6 +51,7 @@ local stories = {
         cover_image = "https://wa62x53yr2bz6qqrua2xjr2oyqhcreprrrwdbsybxwqnjzieauaa.arweave.net/sD2r93iOg59CEaA1dMdOxA4okfGMbDDLAb2g1OUEBQA",
         author = "bN5mR9wX3zA7yC1pT6sJ8kF2qH4dL0uV",
         category = "Uncategorized",
+        votes = 0,
         timestamp = "1681639059"
       },
       ["2"] = {
@@ -56,6 +60,7 @@ local stories = {
         cover_image = "https://wa62x53yr2bz6qqrua2xjr2oyqhcreprrrwdbsybxwqnjzieauaa.arweave.net/sD2r93iOg59CEaA1dMdOxA4okfGMbDDLAb2g1OUEBQA",
         author = "bN5mR9wX3zA7yC1pT6sJ8kF2qH4dL0uV",
         category = "Uncategorized",
+        votes = 0,
         timestamp = "1682244260"
       },
       ["3"] = {
@@ -65,6 +70,7 @@ local stories = {
         cover_image = "https://wa62x53yr2bz6qqrua2xjr2oyqhcreprrrwdbsybxwqnjzieauaa.arweave.net/sD2r93iOg59CEaA1dMdOxA4okfGMbDDLAb2g1OUEBQA",
         author = "bN5mR9wX3zA7yC1pT6sJ8kF2qH4dL0uV",
         category = "Uncategorized",
+        votes = 3,
         timestamp = "1682849461"
       }
     }
@@ -81,6 +87,7 @@ local stories = {
         cover_image = "https://666b2mhebxbk3cs2h5ziand3b3f6jyyzlqashh6ua55wj6keazpq.arweave.net/97wdMOQNwq2KWj9ygDR7Dsvk4xlcASOf1Ad7ZPlEBl8",
         author = "gT2fE8iM1oP9aS4wQ6yU3xZ7vN0cB5rD",
         category = "Uncategorized",
+        votes = 1,
         timestamp = "1683454662"
       },
       ["2"] = {
@@ -90,6 +97,7 @@ local stories = {
         cover_image = "https://666b2mhebxbk3cs2h5ziand3b3f6jyyzlqashh6ua55wj6keazpq.arweave.net/97wdMOQNwq2KWj9ygDR7Dsvk4xlcASOf1Ad7ZPlEBl8",
         author = "gT2fE8iM1oP9aS4wQ6yU3xZ7vN0cB5rD",
         category = "Uncategorized",
+        votes = 1,
         timestamp = "1684059863"
       },
       ["3"] = {
@@ -99,6 +107,7 @@ local stories = {
         cover_image = "https://666b2mhebxbk3cs2h5ziand3b3f6jyyzlqashh6ua55wj6keazpq.arweave.net/97wdMOQNwq2KWj9ygDR7Dsvk4xlcASOf1Ad7ZPlEBl8",
         author = "gT2fE8iM1oP9aS4wQ6yU3xZ7vN0cB5rD",
         category = "Uncategorized",
+        votes = 1,
         timestamp = "1684665064"
       }
     }
@@ -130,6 +139,15 @@ local function send_story_points(address, points)
   })
 end
 
+local function increment_version_votes(story_id, version_id)
+  local story = stories[story_id]
+  if story and story.versions[version_id] then
+    story.versions[version_id].votes = (story.versions[version_id].votes or 0) + 1
+    return true
+  end
+  return false
+end
+
 Handlers.add("create_story",
   { Action = "CreateStory" },
   function(msg)
@@ -147,7 +165,8 @@ Handlers.add("create_story",
           cover_image = msg.cover_image or "",
           author = msg.From,
           timestamp = os.time(),
-          category = msg.category or ""
+          category = msg.category or "",
+          votes = 0
         }
       }
     }
@@ -173,7 +192,8 @@ Handlers.add("create_story_version",
         cover_image = msg.cover_image or current_version.cover_image,
         author = msg.From,
         timestamp = tostring(os.time()),
-        category = msg.category or current_version.category
+        category = msg.category or current_version.category,
+        votes = 0
       }
       
       send_story_points(msg.From, 5)
@@ -184,8 +204,6 @@ Handlers.add("create_story_version",
     end
   end
 )
-
-
 
 Handlers.add("revert_story_to_version",
   { Action = "RevertStoryToVersion" },
@@ -217,7 +235,8 @@ Handlers.add("get_stories",
           cover_image = current_version.cover_image,
           author = current_version.author,
           timestamp = current_version.timestamp,
-          category = current_version.category
+          category = current_version.category,
+          votes = current_version.votes
         }
       })
     end
@@ -237,8 +256,14 @@ Handlers.add("get_story",
   end
 )
 
-
-
-
-
-
+Handlers.add("upvote_story_version",
+  { Action = "UpvoteStoryVersion" },
+  function(msg)
+    if increment_version_votes(msg.story_id, msg.version_id) then
+      send_story_points(msg.From, 1)
+      ao.send({ Target = msg.From, Data = "Upvote successful for story " .. msg.story_id .. ", version " .. msg.version_id })
+    else
+      ao.send({ Target = msg.From, Data = "Story or version not found!" })
+    end
+  end
+)
