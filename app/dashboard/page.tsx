@@ -18,15 +18,22 @@ import {
 } from "@/components/ui/select";
 import { CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { STORY_CATEGORIES } from "../constants/categories";
-import { IoMdThumbsUp } from "react-icons/io";
-import { motion } from "framer-motion";
+import { IoMdThumbsUp, IoMdArrowBack, IoMdArrowForward } from "react-icons/io";
+import { AnimatePresence, motion } from "framer-motion";
+import { FaUser, FaStar } from "react-icons/fa";
+import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
+import { Avatar } from "@/components/ui/avatar";
 
 const Dashboard = () => {
   const { stories, getStories, loading } = useStoriesProcess();
   const { address } = useWallet();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
-  const [featuredStory, setFeaturedStory] = useState<any>(null);
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [topStories, setTopStories] = useState<any[]>([]);
+  const { getAllStoryPoints, allUsersStoryPoints } = useStoryPointsProcess();
+  const [topAuthors, setTopAuthors] = useState<[string, number][]>([]);
+  const [isHovering, setIsHovering] = useState(false);
 
   useEffect(() => {
     if (stories.length === 0 && !loading) {
@@ -35,13 +42,38 @@ const Dashboard = () => {
   }, [getStories, stories.length, loading]);
 
   useEffect(() => {
+    if (Object.keys(allUsersStoryPoints).length === 0) {
+      getAllStoryPoints();
+    }
+  }, [getAllStoryPoints, allUsersStoryPoints]);
+
+  useEffect(() => {
+    if (Object.keys(allUsersStoryPoints).length > 0) {
+      const sorted = Object.entries(allUsersStoryPoints)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3);
+      setTopAuthors(sorted);
+    }
+  }, [allUsersStoryPoints]);
+
+  useEffect(() => {
     if (stories.length > 0) {
-      const highestVotedStory = stories.reduce((prev, current) =>
-        prev.version_data.votes > current.version_data.votes ? prev : current
+      const sorted = [...stories].sort(
+        (a, b) => b.version_data.votes - a.version_data.votes
       );
-      setFeaturedStory(highestVotedStory);
+      setTopStories(sorted.slice(0, 3));
     }
   }, [stories]);
+
+  useEffect(() => {
+    if (topStories.length === 0 || isHovering) return;
+
+    const interval = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % topStories.length);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [topStories.length, isHovering]);
 
   const filteredStories = stories.filter(
     (story) =>
@@ -52,54 +84,172 @@ const Dashboard = () => {
         story.version_data.category === selectedCategory)
   );
 
+  const nextSlide = () => {
+    setCurrentSlide((prev) => (prev + 1) % topStories.length);
+  };
+
+  const prevSlide = () => {
+    setCurrentSlide(
+      (prev) => (prev - 1 + topStories.length) % topStories.length
+    );
+  };
+
   return (
     <div className="container mx-auto py-6 px-4">
       <PageHeader title="Discover Stories">
-        <Link href="/author-board">
-          <Button className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white border-none">
-            Author Board
-          </Button>
-        </Link>
+        <div className="flex gap-3">
+          {address ? (
+            <Link href="/story/create">
+              <Button className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white border-none">
+                Create New Story
+              </Button>
+            </Link>
+          ) : (
+            <Button
+              disabled
+              className="bg-gradient-to-r from-green-500/50 to-emerald-500/50 text-white/70 border-none cursor-not-allowed"
+            >
+              Connect Wallet to Create
+            </Button>
+          )}
+          <Link href="/author-board">
+            <Button className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white border-none">
+              Author Board
+            </Button>
+          </Link>
+        </div>
       </PageHeader>
 
-      {featuredStory && (
-        <CardContainer className="mb-8 overflow-hidden">
-          <div className="md:flex">
-            <div className="md:w-1/3 h-64 md:h-auto relative">
-              <img
-                src={featuredStory.version_data.cover_image || "/no_cover.webp"}
-                alt={`Cover for ${featuredStory.version_data.title}`}
-                className="absolute inset-0 w-full h-full object-cover"
-              />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="md:col-span-2">
+          {topStories.length > 0 && (
+            <div
+              onMouseEnter={() => setIsHovering(true)}
+              onMouseLeave={() => setIsHovering(false)}
+            >
+              <CardContainer className="overflow-hidden relative h-[320px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-gray-800/50 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={currentSlide}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.3 }}
+                    className="h-full"
+                  >
+                    <div className="md:flex h-full">
+                      <div className="md:w-1/3 h-48 md:h-full relative">
+                        <img
+                          src={
+                            topStories[currentSlide].version_data.cover_image ||
+                            "/no_cover.webp"
+                          }
+                          alt={`Cover for ${topStories[currentSlide].version_data.title}`}
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="md:w-2/3 p-6 flex flex-col">
+                        <h2 className="text-2xl font-bold mb-2 text-white/95">
+                          Featured Stories
+                        </h2>
+                        <CardTitle className="text-2xl mb-2 bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
+                          {topStories[currentSlide].version_data.title}
+                        </CardTitle>
+                        <p className="text-gray-200 mb-4 line-clamp-3">
+                          {topStories[currentSlide].version_data.description}
+                        </p>
+                        <div className="mb-4">
+                          <p className="text-sm text-gray-300 italic line-clamp-2">
+                            "
+                            {topStories[
+                              currentSlide
+                            ].version_data.content.slice(0, 150)}
+                            ..."
+                          </p>
+                        </div>
+                        <div className="flex items-center mb-4">
+                          <IoMdThumbsUp
+                            size={20}
+                            className="text-yellow-500 mr-2"
+                          />
+                          <span className="text-gray-300">
+                            {topStories[currentSlide].version_data.votes} votes
+                          </span>
+                        </div>
+                        <div className="mt-auto">
+                          <Link href={`/story/${topStories[currentSlide].id}`}>
+                            <Button className="bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700">
+                              Read Story
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+                <div className="absolute bottom-4 right-4 flex gap-2">
+                  <Button
+                    onClick={prevSlide}
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 bg-black/40 hover:bg-black/60 text-white"
+                  >
+                    <IoMdArrowBack />
+                  </Button>
+                  <Button
+                    onClick={nextSlide}
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 bg-black/40 hover:bg-black/60 text-white"
+                  >
+                    <IoMdArrowForward />
+                  </Button>
+                </div>
+              </CardContainer>
             </div>
-            <div className="md:w-2/3 p-6">
-              <h2 className="text-2xl font-bold mb-2 text-white/95">
-                Featured Story
-              </h2>
-              <CardTitle className="text-2xl mb-2 bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
-                {featuredStory.version_data.title}
-              </CardTitle>
-              <p className="text-gray-200 mb-4">
-                {featuredStory.version_data.description}
-              </p>
-              <p className="text-gray-300 mb-4">
-                {featuredStory.version_data.content.slice(0, 150)}...
-              </p>
-              <div className="flex items-center mb-4">
-                <IoMdThumbsUp size={20} className="text-yellow-500 mr-2" />
-                <span className="text-gray-300">
-                  {featuredStory.version_data.votes} votes
+          )}
+        </div>
+
+        <div className="md:col-span-1">
+          <h2 className="text-xl font-bold mb-4 text-white/95">Top Authors</h2>
+          <div className="space-y-3">
+            {topAuthors.map(([address, points], index) => (
+              <div
+                key={address}
+                className="flex items-center space-x-3 p-3 bg-black/40 rounded-lg hover:bg-black/60 transition-colors"
+              >
+                <div className="flex-shrink-0">
+                  <Avatar className="h-8 w-8 bg-black/60 flex items-center justify-center">
+                    <FaUser className="text-gray-400" />
+                  </Avatar>
+                </div>
+                <span className="flex-grow font-mono text-xs text-gray-300 truncate">
+                  {`${address.slice(0, 6)}...${address.slice(-4)}`}
                 </span>
+                <div className="flex items-center space-x-1 flex-shrink-0">
+                  <FaStar
+                    size={14}
+                    className={
+                      index === 0
+                        ? "text-yellow-500"
+                        : index === 1
+                        ? "text-gray-400"
+                        : "text-amber-600"
+                    }
+                  />
+                  <span className="font-bold text-sm text-gray-300">
+                    {points}
+                  </span>
+                </div>
               </div>
-              <Link href={`/story/${featuredStory.id}`}>
-                <Button className="bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700">
-                  Read Featured Story
-                </Button>
-              </Link>
-            </div>
+            ))}
           </div>
-        </CardContainer>
-      )}
+        </div>
+      </div>
+
+      <h2 className="text-2xl font-semibold mb-4 text-white/90">
+        Find Stories
+      </h2>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -128,23 +278,6 @@ const Dashboard = () => {
         </Select>
       </motion.div>
 
-      <div className="mb-8">
-        {address ? (
-          <Link href="/story/create">
-            <Button className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white border-none">
-              Create New Story
-            </Button>
-          </Link>
-        ) : (
-          <Button
-            disabled
-            className="bg-gradient-to-r from-green-500/50 to-emerald-500/50 text-white/70 border-none cursor-not-allowed"
-          >
-            Connect Wallet to Create a Story
-          </Button>
-        )}
-      </div>
-
       {loading ? (
         <div className="flex justify-center items-center py-10">
           <Spinner className="text-purple-500" />
@@ -155,9 +288,6 @@ const Dashboard = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
         >
-          <h2 className="text-2xl font-semibold mb-4 text-white/90">
-            All Stories
-          </h2>
           {filteredStories.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredStories.map((story, index) => (

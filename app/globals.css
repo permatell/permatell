@@ -136,3 +136,18 @@ body {
 .markdown-editor .custom-html-style li {
   color: white !important;
 }
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  width: 100%;
+}
+
+body {
+  background: #f0f0f0; /* Replace with your desired color or image */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}

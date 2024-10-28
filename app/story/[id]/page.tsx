@@ -24,6 +24,8 @@ import { motion } from "framer-motion";
 import { Separator } from "@/components/ui/separator";
 import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
 import ReactMarkdown from "react-markdown";
+import { BiNetworkChart } from "react-icons/bi";
+import Link from "next/link";
 
 const StoryPage = () => {
   const {
@@ -46,9 +48,11 @@ const StoryPage = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUpvoting, setIsUpvoting] = useState(false);
 
+  console.log(story);
+
   useEffect(() => {
     const storyId = params?.id;
-    if (storyId) {
+    if (storyId && !story) {
       fetchStory(Array.isArray(storyId) ? storyId[0] : storyId);
     }
   }, [params?.id]);
@@ -412,9 +416,24 @@ const StoryPage = () => {
               className="w-full h-auto object-cover rounded-lg shadow-md"
             />
             <div className="mt-4">
-              <h3 className="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent mb-4">
-                Story History
-              </h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+                  Story History
+                </h3>
+                <Link href={`/story/${story.id}/graph`}>
+                  <Button
+                    variant="outline"
+                    className="flex items-center bg-black/60 hover:bg-black/80 hover:text-gray-100 text-gray-300"
+                    size="sm"
+                  >
+                    <BiNetworkChart
+                      size={16}
+                      className="text-purple-500 mr-1"
+                    />
+                    <span>Graph</span>
+                  </Button>
+                </Link>
+              </div>
               <ScrollArea className="h-[400px] pr-4">
                 <ul className="relative border-l border-white/20 ml-2">
                   {sortedVersions.map((version: StoryVersion) => (
