@@ -31,6 +31,7 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-black`}
+        suppressHydrationWarning={true}
       >
         <div className="fixed inset-0 w-full h-full">
           <div className="absolute w-full h-[800vh] opacity-50">

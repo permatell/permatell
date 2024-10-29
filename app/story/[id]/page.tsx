@@ -306,7 +306,7 @@ const StoryPage = () => {
                 </div>
 
                 {!isEditing && (
-                  <div className="flex items-center space-x-4">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:space-x-4">
                     <Button
                       onClick={handleEdit}
                       disabled={!author || isReverting}
@@ -322,7 +322,7 @@ const StoryPage = () => {
                       onClick={handleUpvote}
                       disabled={!author || isUpvoting}
                       variant="outline"
-                      className="flex items-center bg-black/60 hover:bg-black/80 hover:text-gray-100 text-gray-300"
+                      className="flex items-center justify-center bg-black/60 hover:bg-black/80 hover:text-gray-100 text-gray-300"
                     >
                       <IoMdThumbsUp
                         size={16}
