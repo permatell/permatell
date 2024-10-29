@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { useWallet } from "@/contexts/WalletContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import { Story } from "@/interfaces/Story";
 import { StoryVersion } from "@/interfaces/StoryVersion";
 import { Label } from "@/components/ui/label";
 import {
@@ -25,7 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
 import ReactMarkdown from "react-markdown";
 import { BiNetworkChart } from "react-icons/bi";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 const StoryPage = () => {
   const {
@@ -33,9 +32,10 @@ const StoryPage = () => {
     createStoryVersion,
     revertStoryToVersion,
     upvoteStoryVersion,
+    currentStory,
+    setCurrentStory,
   } = useStoriesProcess();
   const params = useParams();
-  const [story, setStory] = useState<Story | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
   const [editedContent, setEditedContent] = useState<string>("");
@@ -47,26 +47,23 @@ const StoryPage = () => {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUpvoting, setIsUpvoting] = useState(false);
+  const router = useRouter();
 
-  console.log(story);
+  console.log(currentStory);
 
   useEffect(() => {
     const storyId = params?.id;
-    if (storyId && !story) {
+    if (storyId) {
       fetchStory(Array.isArray(storyId) ? storyId[0] : storyId);
     }
   }, [params?.id]);
 
   const fetchStory = async (storyId: string) => {
-    if (isInitialLoading) {
-      setIsInitialLoading(true);
-    } else {
-      setIsRefreshing(true);
-    }
     try {
+      setIsInitialLoading(true);
       const fetchedStory = await getStory({ story_id: storyId });
       if (fetchedStory) {
-        setStory(fetchedStory);
+        setCurrentStory(fetchedStory);
         const currentVersion =
           fetchedStory.versions[fetchedStory.current_version];
         setEditedTitle(currentVersion.title);
@@ -87,13 +84,13 @@ const StoryPage = () => {
   };
 
   const handleSave = async () => {
-    if (!author || !story) {
+    if (!author || !currentStory) {
       return;
     }
     setIsSaving(true);
     try {
       await createStoryVersion({
-        story_id: story.id,
+        story_id: currentStory.id,
         title: editedTitle,
         content: editedContent,
         cover_image: editedCoverImage,
@@ -103,7 +100,7 @@ const StoryPage = () => {
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       setIsRefreshing(true);
-      await fetchStory(story.id);
+      await fetchStory(currentStory.id);
 
       setIsEditing(false);
     } catch (error) {
@@ -114,15 +111,15 @@ const StoryPage = () => {
   };
 
   const handleRevert = async (versionId: string | number) => {
-    if (!story) return;
+    if (!currentStory) return;
     setIsReverting(true);
     try {
       await revertStoryToVersion({
-        story_id: story.id,
+        story_id: currentStory.id,
         version_id: versionId.toString(),
       });
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      await fetchStory(story.id);
+      await fetchStory(currentStory.id);
     } catch (error) {
       console.error("Error reverting story:", error);
     } finally {
@@ -135,24 +132,26 @@ const StoryPage = () => {
     return date.toLocaleString();
   };
 
-  const sortedVersions = story
-    ? (Object.values(story.versions) as StoryVersion[]).sort(
+  const sortedVersions = currentStory
+    ? (Object.values(currentStory.versions) as StoryVersion[]).sort(
         (a, b) => Number(b.timestamp) - Number(a.timestamp)
       )
     : [];
-  const currentVersion = story ? story.versions[story.current_version] : null;
+  const currentVersion = currentStory
+    ? currentStory.versions[currentStory.current_version]
+    : null;
 
   const handleUpvote = async () => {
-    if (!author || !story) {
+    if (!author || !currentStory) {
       return;
     }
     setIsUpvoting(true);
     try {
       await upvoteStoryVersion({
-        story_id: story.id,
-        version_id: story.current_version,
+        story_id: currentStory.id,
+        version_id: currentStory.current_version,
       });
-      await fetchStory(story.id);
+      await fetchStory(currentStory.id);
     } catch (error) {
       console.error("Error upvoting story:", error);
     } finally {
@@ -169,7 +168,7 @@ const StoryPage = () => {
     );
   }
 
-  if (!story) {
+  if (!currentStory) {
     return <div>Story not found</div>;
   }
 
@@ -285,9 +284,9 @@ const StoryPage = () => {
             <div className="space-y-6">
               <div className="flex justify-between items-start">
                 <div className="text-sm text-gray-300/90 space-y-1">
-                  <p>Version: {story?.current_version}</p>
+                  <p>Version: {currentStory?.current_version}</p>
                   <p>Category: {currentVersion?.category || "Uncategorized"}</p>
-                  <p>Public: {story?.is_public ? "Yes" : "No"}</p>
+                  <p>Public: {currentStory?.is_public ? "Yes" : "No"}</p>
                   <p>
                     Votes:{" "}
                     <span className="text-yellow-500 font-bold">
@@ -420,19 +419,15 @@ const StoryPage = () => {
                 <h3 className="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
                   Story History
                 </h3>
-                <Link href={`/story/${story.id}/graph`}>
-                  <Button
-                    variant="outline"
-                    className="flex items-center bg-black/60 hover:bg-black/80 hover:text-gray-100 text-gray-300"
-                    size="sm"
-                  >
-                    <BiNetworkChart
-                      size={16}
-                      className="text-purple-500 mr-1"
-                    />
-                    <span>Graph</span>
-                  </Button>
-                </Link>
+                <Button
+                  variant="outline"
+                  className="flex items-center bg-black/60 hover:bg-black/80 hover:text-gray-100 text-gray-300"
+                  size="sm"
+                  onClick={() => router.push(`/story/${currentStory.id}/graph`)}
+                >
+                  <BiNetworkChart size={16} className="text-purple-500 mr-1" />
+                  <span>Graph</span>
+                </Button>
               </div>
               <ScrollArea className="h-[400px] pr-4">
                 <ul className="relative border-l border-white/20 ml-2">
@@ -468,8 +463,9 @@ const StoryPage = () => {
                           </p>
                         </div>
                         {version &&
-                          story &&
-                          String(version.id) !== story.current_version && (
+                          currentStory &&
+                          String(version.id) !==
+                            currentStory.current_version && (
                             <Button
                               onClick={() => handleRevert(version.id)}
                               className="w-full text-xs py-1 bg-gray-800/50 hover:bg-gray-700 hover:text-gray-100 text-gray-300"

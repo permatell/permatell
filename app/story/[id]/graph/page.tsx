@@ -14,13 +14,12 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useParams } from "next/navigation";
-import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
-import { Story } from "@/interfaces/Story";
 import { StoryVersion } from "@/interfaces/StoryVersion";
 import { IoMdThumbsUp } from "react-icons/io";
 import { Spinner } from "@/components/ui/spinner";
 import { Card } from "@/components/ui/card";
 import { formatDistance } from "date-fns";
+import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 
 interface FlowNode extends Node {
   data: {
@@ -38,80 +37,70 @@ type FlowEdge = Edge<{
   animated?: boolean;
 }>;
 
-const StoryNode = ({ data }: NodeProps) => (
-  <div
-    className={`px-4 py-2 rounded-full ${
-      data.isCurrentVersion
-        ? "bg-purple-900/80 border-purple-500"
-        : "bg-green-900/80 border-green-500"
-    } border cursor-pointer transition-all duration-200 hover:scale-105 relative text-white`}
-  >
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={`target-${data.id}`}
-      style={{ background: "#555" }}
-    />
-    <Handle
-      type="source"
-      position={Position.Right}
-      id={`source-${data.id}`}
-      style={{ background: "#555" }}
-    />
+const StoryNode = ({ data, selected }: NodeProps) => {
+  const baseSize = 80;
+  const voteScale = Math.log(data.votes + 1) + 1;
+  const size = baseSize * voteScale;
 
-    <div className="text-sm font-medium text-white">v{data.id}</div>
-    <div className="flex items-center gap-1 text-xs text-gray-300">
-      <IoMdThumbsUp size={12} className="text-yellow-500" />
-      <span className="text-white">{data.votes}</span>
+  return (
+    <div
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+      }}
+      className={`flex flex-col items-center justify-center ${
+        selected
+          ? "ring-2 ring-purple-500 ring-offset-2 ring-offset-black scale-110"
+          : ""
+      } ${
+        data.isCurrentVersion
+          ? "bg-purple-900/80 border-purple-500"
+          : "bg-green-900/80 border-green-500"
+      } border rounded-full cursor-pointer transition-all duration-200 hover:scale-105 relative text-white`}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        id={`target-${data.id}`}
+        style={{ background: "#555" }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id={`source-${data.id}`}
+        style={{ background: "#555" }}
+      />
+
+      <div className="text-sm font-medium text-white">v{data.id}</div>
+      <div className="flex items-center gap-1 text-xs text-gray-300">
+        <IoMdThumbsUp size={12} className="text-yellow-500" />
+        <span className="text-white">{data.votes}</span>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const nodeTypes = {
   storyNode: StoryNode,
 };
 
-const useStoryGraph = (storyId: string) => {
-  const { getStory } = useStoriesProcess();
-  const [story, setStory] = useState<Story | null>(null);
+const useStoryGraph = (storyId?: string) => {
+  const { currentStory } = useStoriesProcess();
   const [isLoading, setIsLoading] = useState(true);
 
-  const memoizedGetStory = useCallback(async () => {
-    try {
-      const storyData = await getStory({ story_id: storyId });
-      return storyData;
-    } catch (error) {
-      console.error("Error fetching story:", error);
-      return null;
-    }
-  }, [storyId, getStory]);
-
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchStory = async () => {
-      const storyData = await memoizedGetStory();
-
-      if (isMounted && storyData) {
-        setStory(storyData);
-        setIsLoading(false);
-      }
-    };
-
-    fetchStory();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [memoizedGetStory]);
+    if (currentStory) {
+      setIsLoading(false);
+    }
+  }, [currentStory]);
 
   const graphData = useMemo(() => {
-    if (!story) return { nodes: [], edges: [] };
+    if (!currentStory) return { nodes: [], edges: [] };
 
-    const versions = Object.values(story.versions);
-    const nodeGap = 150;
-    const startX = 0;
-    const startY = 300;
+    const versions = Object.values(currentStory.versions);
+    const nodeGap = 250;
+    const startX = nodeGap / 2;
+    const startY = 0;
 
     const nodes: FlowNode[] = versions.map((version: StoryVersion, index) => ({
       id: version.id.toString(),
@@ -127,7 +116,7 @@ const useStoryGraph = (storyId: string) => {
         timestamp: Number(version.timestamp),
         author: version.author,
         content: version.content,
-        isCurrentVersion: version.id === Number(story.current_version),
+        isCurrentVersion: version.id === Number(currentStory.current_version),
       },
     }));
 
@@ -142,31 +131,34 @@ const useStoryGraph = (storyId: string) => {
     }));
 
     return { nodes, edges };
-  }, [story]);
+  }, [currentStory]);
 
-  return { graphData, isLoading, story };
+  return { graphData, isLoading, story: currentStory };
 };
 
 const StoryGraphPage = () => {
   const params = useParams();
+  const { currentStory } = useStoriesProcess();
   const storyId = useMemo(
     () => (Array.isArray(params.id) ? params.id[0] : params.id),
     [params.id]
   );
 
+  if (!storyId) {
+    return <div>Invalid story ID</div>;
+  }
+
+  const { graphData, isLoading } = useStoryGraph(storyId);
   const [selectedNode, setSelectedNode] = useState<FlowNode["data"] | null>(
     null
   );
 
-  if (!storyId) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen space-y-4">
-        <p className="text-gray-200 text-lg">Invalid story ID</p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!currentStory && storyId) {
+      window.location.href = `/story/${storyId}`;
+    }
+  }, [currentStory, storyId]);
 
-  const { graphData, isLoading } = useStoryGraph(storyId);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
@@ -181,6 +173,16 @@ const StoryGraphPage = () => {
     setSelectedNode(node.data);
   }, []);
 
+  const fitViewOptions = useMemo(
+    () => ({
+      padding: 0.5,
+      minZoom: 0.1,
+      maxZoom: 1.5,
+      duration: 800,
+    }),
+    []
+  );
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen space-y-4">
@@ -191,7 +193,7 @@ const StoryGraphPage = () => {
   }
 
   return (
-    <div className="w-full h-[calc(100vh-4rem)] relative">
+    <div className="w-full h-screen relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -201,31 +203,36 @@ const StoryGraphPage = () => {
         nodeTypes={nodeTypes}
         connectionMode={ConnectionMode.Loose}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={fitViewOptions}
         defaultEdgeOptions={{
           type: "smoothstep",
           animated: false,
           style: { stroke: "#4B5563", strokeWidth: 2 },
         }}
+        minZoom={fitViewOptions.minZoom}
+        maxZoom={fitViewOptions.maxZoom}
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
         className="h-full"
       >
         <Background />
         {selectedNode && (
-          <Card className="absolute right-4 top-4 w-80 bg-black/50 backdrop-blur-sm border-gray-800 p-4 text-white">
-            <h3 className="text-lg font-semibold mb-2">
+          <Card className="absolute right-4 top-4 w-80 !bg-black/50 backdrop-blur-sm border-gray-800 p-4 text-white z-50 shadow-xl animate-in fade-in slide-in-from-right duration-300">
+            <h3 className="text-lg font-semibold mb-2 text-white">
               Version {selectedNode.id}
             </h3>
-            <div className="space-y-2 text-sm">
+            <div className="space-y-2 text-sm text-white">
               <p>
                 <span className="text-gray-400">Title:</span>{" "}
-                {selectedNode.title}
+                <span className="text-white">{selectedNode.title}</span>
               </p>
               <p>
                 <span className="text-gray-400">Author:</span>{" "}
-                {`${selectedNode.author.slice(
-                  0,
-                  6
-                )}...${selectedNode.author.slice(-4)}`}
+                <span className="text-white">
+                  {`${selectedNode.author.slice(
+                    0,
+                    6
+                  )}...${selectedNode.author.slice(-4)}`}
+                </span>
               </p>
               <p>
                 <span className="text-gray-400">Votes:</span>{" "}
@@ -233,13 +240,19 @@ const StoryGraphPage = () => {
               </p>
               <p>
                 <span className="text-gray-400">Created:</span>{" "}
-                {formatDistance(new Date(selectedNode.timestamp), new Date(), {
-                  addSuffix: true,
-                })}
+                <span className="text-white">
+                  {formatDistance(
+                    new Date(selectedNode.timestamp),
+                    new Date(),
+                    {
+                      addSuffix: true,
+                    }
+                  )}
+                </span>
               </p>
               <div>
                 <span className="text-gray-400">Preview:</span>
-                <p className="mt-1 text-gray-300 line-clamp-3">
+                <p className="mt-1 text-white line-clamp-3">
                   {selectedNode.content}
                 </p>
               </div>

@@ -9,7 +9,7 @@ import { useStoryPointsProcess } from "./StoryPointsProcessContext";
 const GATEWAY_URL = "https://arweave.net";
 const MU_URL = "https://mu.ao-testnet.xyz";
 const CU_URL = "https://cu.ao-testnet.xyz";
-const PROCESS_ID = "EuMgUzNJ-O0pQndTEOlUhb6wgW9sInX2ZPD1lC9exWY";
+const PROCESS_ID = "UH4-2synOhuwj__BbLjO3qHre00eN6Sp2nn0Fj17zBI";
 
 const { message, dryrun } = connect({
   MU_URL,
@@ -44,6 +44,8 @@ interface StoriesProcessContextType {
     story_id: string;
     version_id: string;
   }) => Promise<void>;
+  currentStory: Story | null;
+  setCurrentStory: (story: Story | null) => void;
 }
 
 const StoriesProcessContext = createContext<
@@ -57,6 +59,7 @@ export const StoriesProcessProvider: React.FC<{
   const [stories, setStories] = useState<CurrentStory[]>([]);
   const [loading, setLoading] = useState(false);
   const { getUserStoryPoints } = useStoryPointsProcess();
+  const [currentStory, setCurrentStory] = useState<Story | null>(null);
 
   const getSigner = () => {
     if (!address) {
@@ -234,6 +237,8 @@ export const StoriesProcessProvider: React.FC<{
     stories,
     loading,
     upvoteStoryVersion,
+    currentStory,
+    setCurrentStory,
   };
 
   return (

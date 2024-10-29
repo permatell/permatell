@@ -13,7 +13,7 @@ import { useWallet } from "@/contexts/WalletContext";
 const GATEWAY_URL = "https://arweave.net";
 const MU_URL = "https://mu.ao-testnet.xyz";
 const CU_URL = "https://cu.ao-testnet.xyz";
-const PROCESS_ID = "7At7V2gQjAcxzeXib6pNFIyKhdr-royg9Pbjrjo3b-Q";
+const PROCESS_ID = "CcsBc_giuk4t5-3oIzmepMalbgzRHdy63x5XyJcCIv8";
 
 const { dryrun } = connect({
   MU_URL,
