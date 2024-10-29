@@ -289,7 +289,7 @@ const Dashboard = () => {
           transition={{ delay: 0.4 }}
         >
           {filteredStories.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredStories.map((story, index) => (
                 <motion.div
                   key={story.id}
@@ -297,38 +297,38 @@ const Dashboard = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
                 >
-                  <CardContainer className="overflow-hidden flex flex-col relative h-[420px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-gray-800/50 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
-                    <div className="absolute top-2 right-2 bg-black/80 rounded-full p-2 shadow-md flex items-center justify-center z-10">
+                  <CardContainer className="overflow-hidden flex flex-col relative h-[280px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-gray-800/50 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
+                    <div className="absolute top-2 right-2 bg-black/80 rounded-full p-1.5 shadow-md flex items-center justify-center z-10">
                       <IoMdThumbsUp
-                        size={16}
+                        size={14}
                         className="text-yellow-500 mr-1"
                       />
-                      <span className="text-sm font-semibold text-gray-300">
+                      <span className="text-xs font-semibold text-gray-300">
                         {story.version_data.votes}
                       </span>
                     </div>
-                    <div className="relative h-48">
+                    <div className="relative h-28">
                       <img
                         src={story.version_data.cover_image || "/no_cover.webp"}
                         alt={`Cover for ${story.version_data.title}`}
                         className="absolute inset-0 w-full h-full object-cover"
                       />
                     </div>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent truncate">
+                    <CardHeader className="pb-1 pt-2">
+                      <CardTitle className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent truncate text-base mt-2">
                         {story.version_data.title}
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="flex flex-col flex-grow pt-4">
+                    <CardContent className="flex flex-col flex-grow pt-1">
                       <div>
-                        <p className="text-sm text-gray-300/90 mb-2">
+                        <p className="text-xs text-gray-300/90 mb-1">
                           Last contribution:{" "}
                           <b className="text-purple-200/90">
                             {story.version_data.author.slice(0, 6)}...
                             {story.version_data.author.slice(-4)}
                           </b>
                         </p>
-                        <p className="text-sm text-gray-300/90">
+                        <p className="text-xs text-gray-300/90">
                           Category:{" "}
                           <b className="text-purple-200/90">
                             {story.version_data.category}
@@ -336,7 +336,7 @@ const Dashboard = () => {
                         </p>
                       </div>
                       <Link href={`/story/${story.id}`} className="mt-auto">
-                        <Button className="w-full bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700">
+                        <Button className="w-full bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700 text-sm h-8">
                           Read Story
                         </Button>
                       </Link>
