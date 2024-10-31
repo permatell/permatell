@@ -37,6 +37,7 @@ local function increment_version_votes(story_id, version_id)
   return false
 end
 
+-- @mutation
 Handlers.add("create_story",
   { Action = "CreateStory" },
   function(msg)
@@ -66,6 +67,7 @@ Handlers.add("create_story",
   end
 )
 
+-- @mutation
 Handlers.add("create_story_version",
   { Action = "CreateStoryVersion" },
   function(msg)
@@ -94,6 +96,7 @@ Handlers.add("create_story_version",
   end
 )
 
+-- @mutation
 Handlers.add("revert_story_to_version",
   { Action = "RevertStoryToVersion" },
   function(msg)
@@ -107,6 +110,7 @@ Handlers.add("revert_story_to_version",
   end
 )
 
+-- @view
 Handlers.add("get_stories",
   { Action = "GetStories" },
   function(msg)
@@ -133,6 +137,7 @@ Handlers.add("get_stories",
   end
 )
 
+-- @view
 Handlers.add("get_story",
   { Action = "GetStory" },
   function(msg)
@@ -145,6 +150,7 @@ Handlers.add("get_story",
   end
 )
 
+-- @mutation
 Handlers.add("upvote_story_version",
   { Action = "UpvoteStoryVersion" },
   function(msg)

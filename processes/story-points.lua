@@ -7,6 +7,7 @@ local function add_points(address, points)
   user_points[address] = user_points[address] + points
 end
 
+-- @mutation
 Handlers.add("add_story_points",
   { Action = "AddStoryPoints" },
   function(msg)
@@ -19,6 +20,7 @@ Handlers.add("add_story_points",
   end
 )
 
+-- @view
 Handlers.add("get_all_story_points",
   { Action = "GetAllStoryPoints" },
   function(msg)
@@ -26,6 +28,7 @@ Handlers.add("get_all_story_points",
   end
 )
 
+-- @view
 Handlers.add("get_user_story_points",
   { Action = "GetUserStoryPoints" },
   function(msg)
