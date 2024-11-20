@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  assetPrefix: "/",
+  output: 'export',
 };
 
 export default nextConfig;
