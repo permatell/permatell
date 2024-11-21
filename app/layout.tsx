@@ -27,6 +27,27 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Read environment variable for maintenance mode
+  const isMaintenanceMode = process.env.NEXT_PUBLIC_MAINTENANCE === 'true';
+
+  if (isMaintenanceMode) {
+    return (
+      <html lang="en">
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-black`}
+          suppressHydrationWarning={true}
+        >
+          <div className="flex justify-center items-center min-h-screen bg-black text-white">
+            <div className="text-center p-4">
+              <h1 className="text-4xl font-bold mb-4">Site Under Maintenance</h1>
+              <p>We are currently undergoing maintenance. Please check back later.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    );
+  }
+
   return (
     <html lang="en">
       <body
