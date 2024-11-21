@@ -1,5 +1,5 @@
 local last_story_id = 1
-local STORY_POINTS_PROCESS_ADDRESS = "CcsBc_giuk4t5-3oIzmepMalbgzRHdy63x5XyJcCIv8"
+local STORY_POINTS_PROCESS_ADDRESS = "CiCoT60SUbCAJYY2ncv_-BJOQvGB0tHib_mTLJv4Q6Q"
 
 local stories = {}
 

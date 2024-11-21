@@ -6,7 +6,8 @@ local function add_points(address, points)
   end
   user_points[address] = user_points[address] + points
 end
-
+-- Process ID: CiCoT60SUbCAJYY2ncv_-BJOQvGB0tHib_mTLJv4Q6Q
+-- Points System rework** as pre HL
 -- @mutation
 Handlers.add("add_story_points",
   { Action = "AddStoryPoints" },

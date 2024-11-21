@@ -9,7 +9,7 @@ import { useStoryPointsProcess } from "./StoryPointsProcessContext";
 const GATEWAY_URL = "https://arweave.net";
 const MU_URL = "https://mu.ao-testnet.xyz";
 const CU_URL = "https://cu.ao-testnet.xyz";
-const PROCESS_ID = "UH4-2synOhuwj__BbLjO3qHre00eN6Sp2nn0Fj17zBI";
+const PROCESS_ID = "yNXoHCY4InORm5cgoIKh1592-5JNNGeTqUaZzVTo_0E"; //New process eltio
 
 const { message, dryrun } = connect({
   MU_URL,
