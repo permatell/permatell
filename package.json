@@ -9,6 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@arweave-wallet-kit/core": "^0.1.1",
+    "@arweave-wallet-kit/react": "^0.2.0",
+    "@arweave-wallet-kit/styles": "^0.1.1",
     "@permaweb/aoconnect": "^0.0.59",
     "@radix-ui/react-avatar": "^1.1.1",
     "@radix-ui/react-checkbox": "^1.1.2",
@@ -19,6 +22,8 @@
     "@radix-ui/react-select": "^2.1.2",
     "@radix-ui/react-separator": "^1.1.0",
     "@radix-ui/react-slot": "^1.1.0",
+    "@vela-ventures/aosync-sdk-react": "^1.0.9",
+    "@vela-ventures/aosync-strategy": "^1.0.3",
     "arweave": "^1.15.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
