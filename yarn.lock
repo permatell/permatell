@@ -1233,10 +1233,10 @@
   resolved "https://registry.yarnpkg.com/@ungap/structured-clone/-/structured-clone-1.2.0.tgz#756641adb587851b5ccb3e095daf27ae581c8406"
   integrity sha512-zuVdFrMJiuCDQUMCzQaD6KL28MjnqqN8XnAqiEq9PNm/hCPTSGfrXCOfwj1ow4LFb/tNymJPwsNbVePc1xFqrQ==
 
-"@vela-ventures/ao-sync-sdk@^1.1.21":
-  version "1.1.21"
-  resolved "https://registry.yarnpkg.com/@vela-ventures/ao-sync-sdk/-/ao-sync-sdk-1.1.21.tgz#39cfa2412bf7bb4f3717e3ced8aea70a1f79fbc7"
-  integrity sha512-eT8ccfazxidhnypd1lAIZHoLsy2S4fTxq0kH/pw/T3eXt4NUt8sHjxpVlPQ+Sgfet6QL1qs55p5pjNnZWtgNhQ==
+"@vela-ventures/ao-sync-sdk@^1.1.22":
+  version "1.1.22"
+  resolved "https://registry.yarnpkg.com/@vela-ventures/ao-sync-sdk/-/ao-sync-sdk-1.1.22.tgz#857902f417750ba8502b5de8d1223f31aa7189e9"
+  integrity sha512-2p8cCRGGG8QPyfZTyRHT3xhss73TODACU/dE62NGxvyGiJeBEvfFHObFZh+G3ik3TLWw98OFrMoTyRp+vFZS9g==
   dependencies:
     "@fontsource/sora" "^5.2.5"
     arconnect "^1.0.4"
@@ -1247,12 +1247,12 @@
     qrcode "^1.5.4"
     uuid "^11.0.3"
 
-"@vela-ventures/aosync-sdk-react@^1.0.21":
-  version "1.0.21"
-  resolved "https://registry.yarnpkg.com/@vela-ventures/aosync-sdk-react/-/aosync-sdk-react-1.0.21.tgz#aab665d1b34333c180085d8108c2ee6d88ac54de"
-  integrity sha512-AynxUyXXrSzepmM8XBzcz0f2yE5QM56Ga1afqcNahjXsScUBcGyJkxpXfgJyyOEbjurkFFLH8DnVAtMAasw4kA==
+"@vela-ventures/aosync-sdk-react@^1.0.22":
+  version "1.0.22"
+  resolved "https://registry.yarnpkg.com/@vela-ventures/aosync-sdk-react/-/aosync-sdk-react-1.0.22.tgz#cfb1fbc041a342d78385b6882e38b830fd25a2ca"
+  integrity sha512-6sbubrecx6Dg2eJsIu1Dsq3sTa4XipVsDfJ1yMNzoxEGLhQQawpm/4aSBG4ku0zBYutly/V3MPtdnoV0+gdPQQ==
   dependencies:
-    "@vela-ventures/ao-sync-sdk" "^1.1.21"
+    "@vela-ventures/ao-sync-sdk" "^1.1.22"
 
 abort-controller@^3.0.0:
   version "3.0.0"

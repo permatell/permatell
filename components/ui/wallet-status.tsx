@@ -22,7 +22,7 @@ export const WalletStatus: React.FC = () => {
             {loading ? "Connecting..." : "Connect Wallet"}
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-md w-fit bg-gradient-to-br from-black to-[#0F0514] backdrop-blur-md border border-gray-800/50 shadow-lg">
+        <DialogContent className="sm:max-w-md !w-fit bg-gradient-to-br from-black to-[#0F0514] backdrop-blur-md border border-gray-800/50 shadow-lg">
           <DialogHeader>
             <DialogTitle className="text-primary-foreground text-center">
               Connect with an Arweave wallet
