@@ -1,9 +1,11 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { useWallet as useAOSyncWallet } from "@vela-ventures/aosync-sdk-react";
 
 interface WalletContextType {
   address: string | null;
   connectWallet: () => Promise<void>;
+  connectAOsyncWallet: () => Promise<void>;
   disconnectWallet: () => Promise<void>;
   loading: boolean;
 }
@@ -15,6 +17,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [address, setAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const {
+    connect: connectAOSync,
+    getAddress: getAOSyncAddress,
+    isConnected: isAOSyncConnected,
+    disconnect: disconnectAOSync,
+  } = useAOSyncWallet();
 
   const connectWallet = async () => {
     try {
@@ -25,6 +33,21 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       ]);
       const walletAddress = await globalThis.arweaveWallet.getActiveAddress();
       setAddress(walletAddress);
+    } catch (error) {
+      console.error("Failed to connect wallet:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const connectAOsyncWallet = async () => {
+    try {
+      setLoading(true);
+      await connectAOSync();
+      const walletAddress = await getAOSyncAddress();
+      if (walletAddress) {
+        setAddress(walletAddress);
+      }
     } catch (error) {
       console.error("Failed to connect wallet:", error);
     } finally {
@@ -49,6 +72,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(true);
       try {
         await globalThis.arweaveWallet.disconnect();
+        await disconnectAOSync();
         setAddress(null);
       } catch (error) {
         console.error("Error disconnecting wallet on reload:", error);
@@ -60,9 +84,33 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     disconnectOnReload();
   }, []);
 
+  useEffect(() => {
+    const handleDisconnect = async () => {
+      if (isAOSyncConnected === false) {
+        setLoading(true);
+        try {
+          await globalThis.arweaveWallet.disconnect();
+          setAddress(null);
+        } catch (error) {
+          console.error("Error disconnecting from beacon:", error);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    handleDisconnect();
+  }, [isAOSyncConnected]);
+
   return (
     <WalletContext.Provider
-      value={{ address, connectWallet, disconnectWallet, loading }}
+      value={{
+        address,
+        connectWallet,
+        disconnectWallet,
+        connectAOsyncWallet,
+        loading,
+      }}
     >
       {children}
     </WalletContext.Provider>
