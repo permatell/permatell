@@ -5,6 +5,7 @@ import { WalletProvider } from "@/contexts/WalletContext";
 import { StoriesProcessProvider } from "@/contexts/StoriesProcessContext";
 import { Navbar } from "@/components/ui/nav-bar";
 import { StoryPointsProcessProvider } from "@/contexts/StoryPointsProcessContext";
+import { AOSyncContextProvider } from "@/contexts/AOSyncContext";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -40,18 +41,20 @@ export default function RootLayout({
             <div className="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] h-[450px] rounded-full bg-gradient-to-r from-blue-500/30 to-emerald-500/30 blur-3xl animate-blob animation-delay-4000" />
           </div>
         </div>
-        <WalletProvider>
-          <StoryPointsProcessProvider>
-            <StoriesProcessProvider>
-              <Navbar />
-              <main>
-                <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 relative">
-                  {children}
-                </div>
-              </main>
-            </StoriesProcessProvider>
-          </StoryPointsProcessProvider>
-        </WalletProvider>
+        <AOSyncContextProvider>
+          <WalletProvider>
+            <StoryPointsProcessProvider>
+              <StoriesProcessProvider>
+                <Navbar />
+                <main>
+                  <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 relative">
+                    {children}
+                  </div>
+                </main>
+              </StoriesProcessProvider>
+            </StoryPointsProcessProvider>
+          </WalletProvider>
+        </AOSyncContextProvider>
       </body>
     </html>
   );
