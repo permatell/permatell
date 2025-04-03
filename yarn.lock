@@ -1233,10 +1233,10 @@
   resolved "https://registry.yarnpkg.com/@ungap/structured-clone/-/structured-clone-1.2.0.tgz#756641adb587851b5ccb3e095daf27ae581c8406"
   integrity sha512-zuVdFrMJiuCDQUMCzQaD6KL28MjnqqN8XnAqiEq9PNm/hCPTSGfrXCOfwj1ow4LFb/tNymJPwsNbVePc1xFqrQ==
 
-"@vela-ventures/ao-sync-sdk@^1.1.22":
-  version "1.1.22"
-  resolved "https://registry.yarnpkg.com/@vela-ventures/ao-sync-sdk/-/ao-sync-sdk-1.1.22.tgz#857902f417750ba8502b5de8d1223f31aa7189e9"
-  integrity sha512-2p8cCRGGG8QPyfZTyRHT3xhss73TODACU/dE62NGxvyGiJeBEvfFHObFZh+G3ik3TLWw98OFrMoTyRp+vFZS9g==
+"@vela-ventures/ao-sync-sdk@^1.1.25":
+  version "1.1.25"
+  resolved "https://registry.yarnpkg.com/@vela-ventures/ao-sync-sdk/-/ao-sync-sdk-1.1.25.tgz#6d0020b936126db9e6576878b993679c557b167c"
+  integrity sha512-D4soEHcAUvaSnvmDmNrLMCI9mDAQEV5eEnPoltZoZJRAGIl858RdwDVAN25fneU/ho+zwpjmiXiqlcZXBFjZUQ==
   dependencies:
     "@fontsource/sora" "^5.2.5"
     arconnect "^1.0.4"
@@ -1247,12 +1247,12 @@
     qrcode "^1.5.4"
     uuid "^11.0.3"
 
-"@vela-ventures/aosync-sdk-react@^1.0.22":
-  version "1.0.22"
-  resolved "https://registry.yarnpkg.com/@vela-ventures/aosync-sdk-react/-/aosync-sdk-react-1.0.22.tgz#cfb1fbc041a342d78385b6882e38b830fd25a2ca"
-  integrity sha512-6sbubrecx6Dg2eJsIu1Dsq3sTa4XipVsDfJ1yMNzoxEGLhQQawpm/4aSBG4ku0zBYutly/V3MPtdnoV0+gdPQQ==
+"@vela-ventures/aosync-sdk-react@^1.0.25":
+  version "1.0.25"
+  resolved "https://registry.yarnpkg.com/@vela-ventures/aosync-sdk-react/-/aosync-sdk-react-1.0.25.tgz#4fd87d0b9016c8a52652dcf704ca6da4625e4cc7"
+  integrity sha512-yVRAN/wZWqix9rLTge0Qu3GBuD2W4fwlHwyuCJS5Q919XHoKhC9CX7blt5HQ7CniF8rNrrWJlPTwczmjspUZAw==
   dependencies:
-    "@vela-ventures/ao-sync-sdk" "^1.1.22"
+    "@vela-ventures/ao-sync-sdk" "^1.1.25"
 
 abort-controller@^3.0.0:
   version "3.0.0"
