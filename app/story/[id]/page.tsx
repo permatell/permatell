@@ -408,8 +408,8 @@ const StoryPage = () => {
             <img
               src={
                 isEditing
-                  ? editedCoverImage || "/no_cover.webp"
-                  : currentVersion?.cover_image || "/no_cover.webp"
+                  ? editedCoverImage || "/PermaTell_Logo.svg"
+                  : currentVersion?.cover_image || "/PermaTell_Logo.svg"
               }
               alt="Story cover"
               className="w-full h-auto object-cover rounded-lg shadow-md"

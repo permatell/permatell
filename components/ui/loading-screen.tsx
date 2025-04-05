@@ -26,29 +26,29 @@ export function LoadingScreen() {
   }, [isLoading, progress]);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        await getStories();
-        setProgress(100);
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Error loading initial data:", error);
-        setIsLoading(false);
-      }
-    };
+    // Don't load any data during the loading screen
+    // Just show a progress bar and redirect to dashboard
+    
+    // Set a maximum loading time of 3 seconds
+    const maxLoadingTimeout = setTimeout(() => {
+      console.log("Loading time complete, proceeding to dashboard");
+      setProgress(100);
+      setIsLoading(false);
+    }, 3000);
 
-    loadData();
+    return () => clearTimeout(maxLoadingTimeout);
   }, []);
 
   useEffect(() => {
-    if (!isLoading && stories && stories.length > 0) {
+    if (!isLoading) {
+      // Redirect to dashboard regardless of whether stories were loaded
       const timer = setTimeout(() => {
         router.push("/dashboard");
       }, 500);
 
       return () => clearTimeout(timer);
     }
-  }, [isLoading, stories, router]);
+  }, [isLoading, router]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-black via-gray-900 to-slate-900">
@@ -60,9 +60,13 @@ export function LoadingScreen() {
         </div>
       </div>
 
-      <h1 className="text-4xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent mb-8">
-        PermaTell
-      </h1>
+      <div className="mb-8">
+        <img 
+          src="/PermaTell_Logo.gif" 
+          alt="PermaTell Logo" 
+          className="w-64 h-auto"
+        />
+      </div>
 
       <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
         <div

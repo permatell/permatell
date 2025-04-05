@@ -5,6 +5,7 @@ import { WalletProvider } from "@/contexts/WalletContext";
 import { StoriesProcessProvider } from "@/contexts/StoriesProcessContext";
 import { Navbar } from "@/components/ui/nav-bar";
 import { StoryPointsProcessProvider } from "@/contexts/StoryPointsProcessContext";
+import { OfflineIndicator } from "@/components/ui/offline-indicator";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -44,6 +45,7 @@ export default function RootLayout({
           <StoryPointsProcessProvider>
             <StoriesProcessProvider>
               <Navbar />
+              <OfflineIndicator />
               <main>
                 <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 relative">
                   {children}

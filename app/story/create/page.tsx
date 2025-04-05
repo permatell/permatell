@@ -49,7 +49,7 @@ export default function CreateStoryPage() {
     }
   };
 
-  const coverImageSrc = coverImage || "/no_cover.webp";
+  const coverImageSrc = coverImage || "/PermaTell_Logo.svg";
 
   return (
     <div className="container mx-auto py-6 px-4">

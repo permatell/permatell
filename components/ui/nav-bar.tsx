@@ -46,9 +46,13 @@ export function Navbar() {
               <IoIosArrowForward size={24} />
             </button>
             <Link href="/">
-              <h1 className="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent hover:opacity-80 transition-all">
-                PermaTell
-              </h1>
+              <div className="hover:opacity-80 transition-all">
+                <img 
+                  src="/PermaTell_Logo.svg" 
+                  alt="PermaTell Logo" 
+                  className="h-8 w-auto"
+                />
+              </div>
             </Link>
           </div>
           <div className="flex items-center space-x-4">

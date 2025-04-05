@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { useWallet } from "@/contexts/WalletContext";
+import { useTokenGating } from "@/hooks/useTokenGating";
+import { Disclaimer } from "@/components/ui/disclaimer";
 import { Spinner } from "@/components/ui/spinner";
+import { MintAllocation } from "@/components/ui/mint-allocation";
+import { ProcessStatusIndicator } from "@/components/ui/process-status-indicator";
 import {
   Select,
   SelectContent,
@@ -27,6 +31,7 @@ import { Avatar } from "@/components/ui/avatar";
 const Dashboard = () => {
   const { stories, getStories, loading } = useStoriesProcess();
   const { address } = useWallet();
+  const { isAuthorized, loading: tokenLoading, error } = useTokenGating();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -35,17 +40,45 @@ const Dashboard = () => {
   const [topAuthors, setTopAuthors] = useState<[string, number][]>([]);
   const [isHovering, setIsHovering] = useState(false);
 
+  // Load data only once when the component mounts
   useEffect(() => {
-    if (stories.length === 0 && !loading) {
-      getStories();
-    }
-  }, [getStories, stories.length, loading]);
-
-  useEffect(() => {
-    if (Object.keys(allUsersStoryPoints).length === 0) {
-      getAllStoryPoints();
-    }
-  }, [getAllStoryPoints, allUsersStoryPoints]);
+    const loadInitialData = async () => {
+      // Only load data if we don't already have it
+      if (stories.length === 0 && !loading) {
+        await getStories();
+      }
+      
+      // Wait a bit before loading story points to avoid rate limiting
+      setTimeout(() => {
+        if (Object.keys(allUsersStoryPoints).length === 0) {
+          getAllStoryPoints();
+        }
+      }, 2000); // 2 second delay
+    };
+    
+    loadInitialData();
+    
+    // Set up a refresh interval (every 2 minutes)
+    const refreshInterval = setInterval(() => {
+      console.log("Refreshing data...");
+      if (!loading) {
+        // Use a timestamp to avoid refreshing too frequently
+        const lastRefresh = localStorage.getItem('lastStoriesRefresh');
+        const now = Date.now();
+        
+        // Only refresh if it's been more than 2 minutes since the last refresh
+        if (!lastRefresh || now - parseInt(lastRefresh) > 120000) {
+          console.log("Refreshing stories data...");
+          getStories();
+          localStorage.setItem('lastStoriesRefresh', now.toString());
+        } else {
+          console.log("Skipping refresh, last refresh was too recent");
+        }
+      }
+    }, 120000); // 2 minutes
+    
+    return () => clearInterval(refreshInterval);
+  }, []);
 
   useEffect(() => {
     if (Object.keys(allUsersStoryPoints).length > 0) {
@@ -94,16 +127,82 @@ const Dashboard = () => {
     );
   };
 
+  // Token gating check
+  if (tokenLoading) {
+    return (
+      <div className="container mx-auto py-6 px-4 flex flex-col items-center justify-center min-h-[70vh]">
+        <Spinner className="text-purple-500 w-12 h-12" />
+        <p className="mt-4 text-gray-300">Verifying token ownership...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthorized && address) {
+    return (
+      <div className="container mx-auto py-6 px-4">
+        <div className="bg-black/40 backdrop-blur-md border border-red-900/50 rounded-lg p-6 mt-6 max-w-2xl mx-auto">
+          <h2 className="text-xl font-semibold mb-4 text-white">Access Restricted</h2>
+          <p className="text-gray-300 mb-6">
+            PermaTell requires at least one $HOOD token to access content. Please acquire $HOOD tokens (Contract ID: Nn3wPBPJXqmqHlzi41v4Yu9PVJYVXx-ENQKHsMqRreE) to continue.
+          </p>
+          <div className="flex flex-col gap-4">
+            <div className="flex gap-4">
+              <a 
+                href="https://botega.arweave.net/#/swap?from=xU9zFkq3X2ZQ6olwNVvr1vUWIjc3kXTWr7xKQD6dh10&to=Nn3wPBPJXqmqHlzi41v4Yu9PVJYVXx-ENQKHsMqRreE"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Button className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white border-none">
+                  Get $HOOD Tokens
+                </Button>
+              </a>
+              <Link href="/disclaimer">
+                <Button variant="outline">Learn More</Button>
+              </Link>
+            </div>
+            <div className="mt-2 text-xs text-gray-400">
+              <p>To interact with the $HOOD token, use the AO messaging protocol:</p>
+              <pre className="mt-1 p-2 bg-black/50 rounded overflow-x-auto">
+                {`// Using window.arweaveWallet directly
+const result = await window.arweaveWallet.connect(['ACCESS_ADDRESS']);
+const address = await window.arweaveWallet.getActiveAddress();
+
+// Send message to token contract
+const response = await window.ao.send({
+  Target: "Nn3wPBPJXqmqHlzi41v4Yu9PVJYVXx-ENQKHsMqRreE",
+  Tags: {
+    Action: "Balance",
+    Target: "${address}"
+  }
+});
+
+// Get balance from response
+const balance = response.Tags.Balance;`}
+              </pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto py-6 px-4">
       <PageHeader title="Discover Stories">
         <div className="flex gap-3">
           {address ? (
-            <Link href="/story/create">
-              <Button className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white border-none">
-                Create New Story
-              </Button>
-            </Link>
+            <>
+              <Link href="/story/create">
+                <Button className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white border-none">
+                  Create New Story
+                </Button>
+              </Link>
+              <Link href="/mint">
+                <Button className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white border-none">
+                  Mint $HOOD
+                </Button>
+              </Link>
+            </>
           ) : (
             <Button
               disabled
@@ -142,7 +241,7 @@ const Dashboard = () => {
                         <img
                           src={
                             topStories[currentSlide].version_data.cover_image ||
-                            "/no_cover.webp"
+                            "/PermaTell_Logo.svg"
                           }
                           alt={`Cover for ${topStories[currentSlide].version_data.title}`}
                           className="absolute inset-0 w-full h-full object-cover"
@@ -309,7 +408,7 @@ const Dashboard = () => {
                     </div>
                     <div className="relative h-28">
                       <img
-                        src={story.version_data.cover_image || "/no_cover.webp"}
+                        src={story.version_data.cover_image || "/PermaTell_Logo.svg"}
                         alt={`Cover for ${story.version_data.title}`}
                         className="absolute inset-0 w-full h-full object-cover"
                       />
@@ -354,4 +453,13 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+const DashboardWithDisclaimer = () => {
+  return (
+    <>
+      <Dashboard />
+      <Disclaimer />
+    </>
+  );
+};
+
+export default DashboardWithDisclaimer;
