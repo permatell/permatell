@@ -1,16 +1,31 @@
 "use client";
 
+import React from "react";
 import { cn } from "@/lib/utils";
-import * as React from "react";
-import { ImSpinner8 } from "react-icons/im";
 
-const Spinner = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div className={cn("flex justify-center items-center", className || "")}>
-    <ImSpinner8 className="animate-spin text-4xl text-white/80" />
-  </div>
-));
+interface SpinnerProps {
+  className?: string;
+  size?: "sm" | "md" | "lg";
+}
 
-export { Spinner };
+export function Spinner({ className, size = "md" }: SpinnerProps) {
+  const sizeClasses = {
+    sm: "h-4 w-4",
+    md: "h-8 w-8",
+    lg: "h-12 w-12",
+  };
+
+  return (
+    <div
+      className={cn(
+        "animate-spin rounded-full border-2 border-current border-t-transparent",
+        sizeClasses[size],
+        className
+      )}
+      role="status"
+      aria-label="Loading"
+    >
+      <span className="sr-only">Loading...</span>
+    </div>
+  );
+}

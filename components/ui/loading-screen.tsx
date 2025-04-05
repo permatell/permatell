@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 export function LoadingScreen() {
   const [progress, setProgress] = useState(0);
@@ -60,9 +61,15 @@ export function LoadingScreen() {
         </div>
       </div>
 
-      <h1 className="text-4xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent mb-8">
-        PermaTell
-      </h1>
+      <div className="relative w-64 h-64 md:w-80 md:h-80 mb-4">
+        <Image
+          src="/pt_logo.gif"
+          alt="PermaTell Logo"
+          fill
+          className="object-contain"
+          priority
+        />
+      </div>
 
       <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
         <div

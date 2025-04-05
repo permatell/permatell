@@ -7,6 +7,7 @@ import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 export function Navbar() {
   const router = useRouter();
@@ -46,9 +47,15 @@ export function Navbar() {
               <IoIosArrowForward size={24} />
             </button>
             <Link href="/">
-              <h1 className="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent hover:opacity-80 transition-all">
-                PermaTell
-              </h1>
+              <div className="relative w-32 h-8">
+                <Image
+                  src="/logo.svg"
+                  alt="PermaTell Logo"
+                  fill
+                  className="object-contain"
+                  priority
+                />
+              </div>
             </Link>
           </div>
           <div className="flex items-center space-x-4">

@@ -190,17 +190,15 @@ const Dashboard = () => {
                 <div className="absolute bottom-4 right-4 flex gap-2">
                   <Button
                     onClick={prevSlide}
-                    size="icon"
                     variant="ghost"
-                    className="h-8 w-8 bg-black/40 hover:bg-black/60 text-white"
+                    className="h-8 w-8 p-0 bg-black/40 hover:bg-black/60 text-white"
                   >
                     <IoMdArrowBack />
                   </Button>
                   <Button
                     onClick={nextSlide}
-                    size="icon"
                     variant="ghost"
-                    className="h-8 w-8 bg-black/40 hover:bg-black/60 text-white"
+                    className="h-8 w-8 p-0 bg-black/40 hover:bg-black/60 text-white"
                   >
                     <IoMdArrowForward />
                   </Button>
@@ -350,6 +348,31 @@ const Dashboard = () => {
           )}
         </motion.section>
       )}
+
+      {/* Footer Section */}
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.6 }}
+        className="mt-12 pt-6 border-t border-gray-800"
+      >
+        <div className="flex justify-between items-center text-sm text-gray-400">
+          <div className="flex items-center gap-4">
+            <Link href="/disclaimer" className="hover:text-white transition-colors">
+              Disclaimer
+            </Link>
+            <div className="relative group cursor-not-allowed">
+              <span className="group-hover:text-white transition-colors">$HOOD Token</span>
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 text-xs text-white rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                Coming Soon
+              </div>
+            </div>
+          </div>
+          <div className="text-gray-500 text-xs">
+            Alpha Version
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 };
