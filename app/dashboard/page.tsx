@@ -117,11 +117,6 @@ const Dashboard = () => {
               Author Board
             </Button>
           </Link>
-          <Link href="/disclaimer">
-            <Button variant="outline" size="sm" className="text-gray-400 hover:text-white">
-              Disclaimer
-            </Button>
-          </Link>
         </div>
       </PageHeader>
 
@@ -195,17 +190,15 @@ const Dashboard = () => {
                 <div className="absolute bottom-4 right-4 flex gap-2">
                   <Button
                     onClick={prevSlide}
-                    size="icon"
                     variant="ghost"
-                    className="h-8 w-8 bg-black/40 hover:bg-black/60 text-white"
+                    className="h-8 w-8 p-0 bg-black/40 hover:bg-black/60 text-white"
                   >
                     <IoMdArrowBack />
                   </Button>
                   <Button
                     onClick={nextSlide}
-                    size="icon"
                     variant="ghost"
-                    className="h-8 w-8 bg-black/40 hover:bg-black/60 text-white"
+                    className="h-8 w-8 p-0 bg-black/40 hover:bg-black/60 text-white"
                   >
                     <IoMdArrowForward />
                   </Button>

@@ -1,81 +1,37 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useAOProfile } from "@/contexts/AOProfileContext";
+import React, { useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import Link from "next/link";
+import { ProfileManager } from "@/components/ui/profile-manager";
+import { PageHeader } from "@/components/ui/page-header";
+import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
+import { FaUser, FaEdit, FaTwitter, FaGithub, FaGlobe } from "react-icons/fa";
+import { motion } from "framer-motion";
 
 export default function ProfilePage() {
-  const { address } = useWallet();
-  const { profile, loading, error, createProfile, updateProfile } = useAOProfile();
+  const { address, profile, profileLoading } = useWallet();
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    username: profile?.username || "",
-    bio: profile?.bio || "",
-    avatar_url: profile?.avatar_url || "",
-    wallet_address: address || "",
-    social_links: {
-      twitter: profile?.social_links?.twitter || "",
-      github: profile?.social_links?.github || "",
-      website: profile?.social_links?.website || "",
-    },
-  });
-
-  useEffect(() => {
-    if (address) {
-      setFormData(prev => ({
-        ...prev,
-        wallet_address: address
-      }));
-    }
-  }, [address]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (profile) {
-        await updateProfile(formData);
-      } else {
-        await createProfile(formData);
-      }
-      setIsEditing(false);
-    } catch (error) {
-      console.error("Error saving profile:", error);
-    }
-  };
 
   if (!address) {
     return (
-      <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl mx-auto">
           <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">Connect Wallet</h2>
-            <p className="mt-2 text-gray-600">Please connect your wallet to view and edit your profile.</p>
+            <h2 className="text-3xl font-bold text-white">Connect Wallet</h2>
+            <p className="mt-2 text-gray-400">Please connect your wallet to view and edit your profile.</p>
           </div>
         </div>
       </div>
     );
   }
 
-  if (loading) {
+  if (profileLoading) {
     return (
-      <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl mx-auto">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">Loading...</h2>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">Error</h2>
-            <p className="mt-2 text-red-600">{error}</p>
+          <div className="flex justify-center items-center py-10">
+            <Spinner className="text-purple-500" />
           </div>
         </div>
       </div>
@@ -83,176 +39,98 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
-        <div className="bg-white shadow sm:rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold text-gray-900">Profile</h3>
-              {!isEditing && (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  Edit Profile
-                </button>
-              )}
+        <PageHeader title="Profile" />
+        
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="mt-8"
+        >
+          {isEditing ? (
+            <div className="bg-black/40 backdrop-blur-md border border-gray-800/50 rounded-lg p-6 shadow-lg">
+              <ProfileManager
+                onSave={() => setIsEditing(false)}
+                onCancel={() => setIsEditing(false)}
+              />
             </div>
-
-            {isEditing ? (
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div>
-                  <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                    Username
-                  </label>
-                  <input
-                    type="text"
-                    id="username"
-                    value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="bio" className="block text-sm font-medium text-gray-700">
-                    Bio
-                  </label>
-                  <textarea
-                    id="bio"
-                    value={formData.bio}
-                    onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                    rows={4}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="avatar_url" className="block text-sm font-medium text-gray-700">
-                    Avatar URL
-                  </label>
-                  <input
-                    type="url"
-                    id="avatar_url"
-                    value={formData.avatar_url}
-                    onChange={(e) => setFormData({ ...formData, avatar_url: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  />
-                </div>
-
-                <div className="space-y-4">
-                  <h4 className="text-lg font-medium text-gray-900">Social Links</h4>
-                  
-                  <div>
-                    <label htmlFor="twitter" className="block text-sm font-medium text-gray-700">
-                      Twitter
-                    </label>
-                    <input
-                      type="url"
-                      id="twitter"
-                      value={formData.social_links.twitter}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          social_links: { ...formData.social_links, twitter: e.target.value },
-                        })
-                      }
-                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="github" className="block text-sm font-medium text-gray-700">
-                      GitHub
-                    </label>
-                    <input
-                      type="url"
-                      id="github"
-                      value={formData.social_links.github}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          social_links: { ...formData.social_links, github: e.target.value },
-                        })
-                      }
-                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="website" className="block text-sm font-medium text-gray-700">
-                      Website
-                    </label>
-                    <input
-                      type="url"
-                      id="website"
-                      value={formData.social_links.website}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          social_links: { ...formData.social_links, website: e.target.value },
-                        })
-                      }
-                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(false)}
-                    className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    Save
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="space-y-6">
+          ) : (
+            <div className="bg-black/40 backdrop-blur-md border border-gray-800/50 rounded-lg p-6 shadow-lg">
+              <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center space-x-4">
-                  {profile?.avatar_url && (
-                    <img
-                      src={profile.avatar_url}
-                      alt={profile?.username || "Profile"}
-                      className="h-20 w-20 rounded-full"
-                    />
-                  )}
-                  <div>
-                    <h4 className="text-xl font-medium text-gray-900">{profile?.username || "No username set"}</h4>
-                    <p className="text-gray-500">{profile?.bio || "No bio set"}</p>
+                  <div className="relative">
+                    {profile?.thumbnail ? (
+                      <img
+                        src={profile.thumbnail}
+                        alt={profile.displayName || "Profile"}
+                        className="h-20 w-20 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-20 w-20 rounded-full bg-black/60 flex items-center justify-center">
+                        <FaUser size={40} className="text-gray-400" />
+                      </div>
+                    )}
                   </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">
+                      {profile?.displayName || "Anonymous"}
+                    </h3>
+                    <p className="text-gray-400">@{profile?.userName || "username"}</p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setIsEditing(true)}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  <FaEdit className="mr-2" />
+                  Edit Profile
+                </Button>
+              </div>
+
+              {profile?.banner && (
+                <div className="mb-6 rounded-lg overflow-hidden h-48">
+                  <img
+                    src={profile.banner}
+                    alt="Banner"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-lg font-semibold text-white mb-2">Bio</h4>
+                  <p className="text-gray-300">
+                    {profile?.description || "No bio provided"}
+                  </p>
                 </div>
 
                 {profile?.social_links && (
-                  <div className="space-y-2">
-                    <h4 className="text-lg font-medium text-gray-900">Social Links</h4>
-                    <div className="space-y-1">
+                  <div>
+                    <h4 className="text-lg font-semibold text-white mb-2">Social Links</h4>
+                    <div className="space-y-2">
                       {profile.social_links.twitter && (
                         <a
-                          href={profile.social_links.twitter}
+                          href={`https://twitter.com/${profile.social_links.twitter}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="block text-indigo-600 hover:text-indigo-500"
+                          className="flex items-center text-purple-400 hover:text-purple-300"
                         >
-                          Twitter
+                          <FaTwitter className="mr-2" />
+                          @{profile.social_links.twitter}
                         </a>
                       )}
                       {profile.social_links.github && (
                         <a
-                          href={profile.social_links.github}
+                          href={`https://github.com/${profile.social_links.github}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="block text-indigo-600 hover:text-indigo-500"
+                          className="flex items-center text-purple-400 hover:text-purple-300"
                         >
-                          GitHub
+                          <FaGithub className="mr-2" />
+                          {profile.social_links.github}
                         </a>
                       )}
                       {profile.social_links.website && (
@@ -260,18 +138,35 @@ export default function ProfilePage() {
                           href={profile.social_links.website}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="block text-indigo-600 hover:text-indigo-500"
+                          className="flex items-center text-purple-400 hover:text-purple-300"
                         >
-                          Website
+                          <FaGlobe className="mr-2" />
+                          {profile.social_links.website}
                         </a>
                       )}
                     </div>
                   </div>
                 )}
+
+                <div>
+                  <h4 className="text-lg font-semibold text-white mb-2">Wallet Address</h4>
+                  <p className="text-gray-300 font-mono">
+                    {address}
+                  </p>
+                </div>
+
+                {profile?.created_at && (
+                  <div>
+                    <h4 className="text-lg font-semibold text-white mb-2">Member Since</h4>
+                    <p className="text-gray-300">
+                      {new Date(profile.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
+        </motion.div>
       </div>
     </div>
   );

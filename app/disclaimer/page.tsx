@@ -10,7 +10,7 @@ export default function DisclaimerPage() {
     <div className="container mx-auto py-6 px-4">
       <PageHeader title="Disclaimer">
         <Link href="/dashboard">
-          <Button variant="outline">Back to Dashboard</Button>
+          <Button variant="outline" className="bg-purple-600/20 hover:bg-purple-600/30 text-white border-purple-500/50">Back to Dashboard</Button>
         </Link>
       </PageHeader>
 
