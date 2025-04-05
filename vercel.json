@@ -1,6 +1,6 @@
 {
     "build": {
-      "command": "npm run vercel-build"
+      "installCommand": "npm install --legacy-peer-deps"
     }
   }
   
