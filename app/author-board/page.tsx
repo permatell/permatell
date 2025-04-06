@@ -12,6 +12,8 @@ import { IoBookOutline } from "react-icons/io5";
 import { IoMdArrowDropdown, IoMdArrowDropup } from "react-icons/io";
 import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
+import { AuthorAvatar } from "@/components/ui/author-avatar";
+import { ArnsName } from "@/components/ui/arns-name";
 
 const AuthorBoard: React.FC = () => {
   const { getAllStoryPoints, allUsersStoryPoints, loading } =
@@ -100,33 +102,38 @@ const AuthorBoard: React.FC = () => {
                 className="flex items-center space-x-4 cursor-pointer"
                 onClick={() => toggleAuthor(authorAddress)}
               >
-                <span className="font-bold text-white/90">{index + 1}.</span>
-                <Avatar className="h-10 w-10 bg-black/60 flex items-center justify-center">
-                  <FaUser className="text-gray-400" />
-                </Avatar>
-                <span className="flex-grow font-mono text-sm text-gray-300">
-                  {authorAddress}
-                </span>
-                <div className="flex items-center space-x-1">
-                  <FaStar
-                    size={16}
-                    className={`flex-shrink-0 ${getPointColor(index)}`}
-                  />
-                  <span
-                    className={`font-bold mt-[2px] ${getPointColor(index)}`}
-                  >
-                    {points}
-                  </span>
-                  {authorStories[authorAddress]?.length > 0 && (
-                    <>
-                      <span className="mx-2 text-gray-500">|</span>
-                      {expandedAuthor === authorAddress ? (
-                        <IoMdArrowDropup className="text-gray-400 text-xl" />
-                      ) : (
-                        <IoMdArrowDropdown className="text-gray-400 text-xl" />
-                      )}
-                    </>
-                  )}
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-4">
+                    <span className="font-bold text-white/90">{index + 1}.</span>
+                    <AuthorAvatar address={authorAddress} size="md" />
+                    <div className="flex-grow">
+                      <p className="font-medium text-white/90">
+                        <ArnsName address={authorAddress || null} showAddress={true} />
+                      </p>
+                      <p className="text-sm text-gray-500">{points} points</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <FaStar
+                      size={16}
+                      className={`flex-shrink-0 ${getPointColor(index)}`}
+                    />
+                    <span
+                      className={`font-bold mt-[2px] ${getPointColor(index)}`}
+                    >
+                      {points}
+                    </span>
+                    {authorStories[authorAddress]?.length > 0 && (
+                      <>
+                        <span className="mx-2 text-gray-500">|</span>
+                        {expandedAuthor === authorAddress ? (
+                          <IoMdArrowDropup className="text-gray-400 text-xl" />
+                        ) : (
+                          <IoMdArrowDropdown className="text-gray-400 text-xl" />
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 

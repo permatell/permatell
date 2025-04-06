@@ -22,7 +22,8 @@ import { IoMdThumbsUp, IoMdArrowBack, IoMdArrowForward } from "react-icons/io";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaUser, FaStar } from "react-icons/fa";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
-import { Avatar } from "@/components/ui/avatar";
+import { AuthorAvatar } from "@/components/ui/author-avatar";
+import { ArnsName } from "@/components/ui/arns-name";
 
 const Dashboard = () => {
   const { stories, getStories, loading } = useStoriesProcess();
@@ -217,13 +218,14 @@ const Dashboard = () => {
                 className="flex items-center space-x-3 p-3 bg-black/40 rounded-lg hover:bg-black/60 transition-colors"
               >
                 <div className="flex-shrink-0">
-                  <Avatar className="h-8 w-8 bg-black/60 flex items-center justify-center">
-                    <FaUser className="text-gray-400" />
-                  </Avatar>
+                  <AuthorAvatar address={address} size="md" />
                 </div>
-                <span className="flex-grow font-mono text-xs text-gray-300 truncate">
-                  {`${address.slice(0, 6)}...${address.slice(-4)}`}
-                </span>
+                <div className="flex-grow">
+                  <p className="font-medium text-white/90">
+                    <ArnsName address={address || null} showAddress={true} />
+                  </p>
+                  <p className="text-sm text-gray-500">{points} points</p>
+                </div>
                 <div className="flex items-center space-x-1 flex-shrink-0">
                   <FaStar
                     size={14}

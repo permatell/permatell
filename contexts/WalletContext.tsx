@@ -4,12 +4,18 @@ import { useWallet as useAOSyncWallet } from "@vela-ventures/aosync-sdk-react";
 import { connect, createDataItemSigner } from '@permaweb/aoconnect';
 import Arweave from 'arweave';
 import AOProfile from '@permaweb/aoprofile';
+import { arnManager } from '@/lib/ario';
+import { useRouter } from 'next/navigation';
+import { useStoriesProcess } from './StoriesProcessContext';
+import { useStoryPointsProcess } from './StoryPointsProcessContext';
+import { useAOProfile } from './AOProfileContext';
+import { arnsCache, generateCacheKey } from "@/utils/cache";
 
 // Initialize Arweave
 const arweave = Arweave.init({});
 
 // Initialize AO connection
-const ao = connect();
+const aoConnection = connect();
 
 export interface AOProfileData {
   id?: string;
@@ -26,6 +32,12 @@ export interface AOProfileData {
     github?: string;
     website?: string;
   };
+  primaryArn?: string;
+  allArns?: string[];
+  pendingArnRequest?: string;
+  gatewayNode?: string;
+  balance?: number;
+  assets?: string[];
 }
 
 interface WalletContextType {
@@ -38,6 +50,9 @@ interface WalletContextType {
   profileLoading: boolean;
   createProfile: (profileData: AOProfileData) => Promise<string | null>;
   updateProfile: (profileId: string, profileData: AOProfileData) => Promise<string | null>;
+  requestPrimaryArn: (name: string) => Promise<void>;
+  checkPendingArnRequest: () => Promise<string | null>;
+  refreshBalance: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -61,11 +76,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (!address) {
       setProfile(null);
+      setProfileLoading(false);
       return;
     }
 
-    const initSDK = async () => {
+    const initializeProfile = async () => {
       try {
+        console.log('Initializing SDKs for address:', address);
+        
         // Create a data item signer using the connected wallet
         const signer = createDataItemSigner(window.arweaveWallet);
         
@@ -76,7 +94,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
           getProfileById, 
           getProfileByWalletAddress, 
           getRegistryProfiles 
-        } = AOProfile.init({ ao, signer, arweave });
+        } = AOProfile.init({ ao: aoConnection, signer, arweave });
         
         setProfileSDK({
           createProfile,
@@ -86,38 +104,111 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
           getRegistryProfiles
         });
         
-        // Fetch the user's profile
+        // Fetch the user's profile and ARN data in parallel
         setProfileLoading(true);
         try {
+          console.log('Fetching profile and ARN data...');
+          
+          // Check cache first
+          const cacheKey = generateCacheKey('arns', address);
+          const cachedProfile = arnsCache.get(cacheKey);
+          
+          if (cachedProfile) {
+            setProfile(cachedProfile);
+            setProfileLoading(false);
+            return;
+          }
+          
+          // Fetch the profile
           const userProfile = await getProfileByWalletAddress({ address });
+          console.log('AO Profile fetched:', userProfile);
+          
+          // Then fetch ArNS data using our new AO-based implementation
+          let arnsData: {
+            primaryArn: string | null;
+            allArns: string[];
+            pendingArnRequest: string | null;
+            balance: number;
+            gatewayNode?: string;
+          } = {
+            primaryArn: null,
+            allArns: [],
+            pendingArnRequest: null,
+            balance: 0
+          };
+          
+          try {
+            console.log('Fetching ArNS data...');
+            const [primaryArn, allArns, pendingRequest, balanceResult, gatewayNode] = await Promise.all([
+              arnManager.getPrimaryARN(address),
+              arnManager.getAllPrimaryNames(address),
+              arnManager.checkPrimaryNameRequest(address),
+              arnManager.checkBalance(address),
+              arnManager.getGatewayNode(address)
+            ]);
+            
+            arnsData = {
+              primaryArn,
+              allArns: allArns.map(arn => arn.domain),
+              pendingArnRequest: pendingRequest?.domain || null,
+              balance: balanceResult?.balance || 0,
+              gatewayNode: gatewayNode?.fqdn || undefined
+            };
+            
+            console.log('ArNS data fetched:', arnsData);
+          } catch (arnsError) {
+            console.error('Error fetching ArNS data:', arnsError);
+            // Continue with empty ArNS data
+            // The ArNSDisplay component will handle displaying appropriate error messages
+          }
           
           // Process the profile to ensure image URLs have the Arweave gateway prefix
           if (userProfile) {
-            // Add Arweave gateway URL to thumbnail and banner if they're just transaction IDs
-            if (userProfile.thumbnail && !userProfile.thumbnail.startsWith('http')) {
-              userProfile.thumbnail = `https://arweave.net/${userProfile.thumbnail}`;
-            }
+            const processedProfile = {
+              ...userProfile,
+              primaryArn: arnsData.primaryArn,
+              allArns: arnsData.allArns,
+              pendingArnRequest: arnsData.pendingArnRequest,
+              balance: arnsData.balance,
+              gatewayNode: arnsData.gatewayNode,
+              thumbnail: userProfile.thumbnail ? 
+                (userProfile.thumbnail.startsWith('http') ? 
+                  userProfile.thumbnail : 
+                  `https://arweave.net/${userProfile.thumbnail}`
+                ) : null,
+              banner: userProfile.banner ? 
+                (userProfile.banner.startsWith('http') ? 
+                  userProfile.banner : 
+                  `https://arweave.net/${userProfile.banner}`
+                ) : null,
+              // Keep the assets array as is, we'll handle the URLs in the UI
+              assets: userProfile.assets || []
+            };
             
-            if (userProfile.banner && !userProfile.banner.startsWith('http')) {
-              userProfile.banner = `https://arweave.net/${userProfile.banner}`;
-            }
+            console.log('Processed profile with ArNS data:', processedProfile);
+            
+            // Cache the processed profile
+            arnsCache.set(cacheKey, processedProfile);
+            
+            setProfile(processedProfile);
+          } else {
+            console.log('No AO profile found for address:', address);
+            setProfile(null);
           }
-          
-          setProfile(userProfile);
         } catch (err) {
-          console.error('Error fetching AO Profile:', err);
+          console.error('Error fetching profile and ARN data:', err);
           setProfile(null);
         } finally {
           setProfileLoading(false);
         }
       } catch (err) {
-        console.error('Error initializing AO Profile SDK:', err);
+        console.error('Error initializing profile:', err);
         setProfile(null);
         setProfileLoading(false);
       }
     };
 
-    initSDK();
+    initializeProfile();
   }, [address]);
 
   const connectWallet = async () => {
@@ -266,6 +357,64 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // Add function to request a primary ARN
+  const requestPrimaryArn = async (name: string) => {
+    if (!address) {
+      console.error('Cannot request primary ARN: wallet not connected');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await arnManager.requestPrimaryName(name, address);
+      
+      // Refresh profile to update ARN status
+      const pendingRequest = await arnManager.checkPrimaryNameRequest(address);
+      setProfile(prev => prev ? {
+        ...prev,
+        pendingArnRequest: pendingRequest?.domain
+      } : null);
+    } catch (error) {
+      console.error('Error requesting primary ARN:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add function to check pending ARN requests
+  const checkPendingArnRequest = async () => {
+    if (!address) return null;
+    
+    try {
+      const request = await arnManager.checkPrimaryNameRequest(address);
+      return request?.domain || null;
+    } catch (error) {
+      console.error('Error checking pending ARN request:', error);
+      return null;
+    }
+  };
+
+  // Function to refresh the ARIO balance
+  const refreshBalance = async () => {
+    if (!address) return;
+    
+    try {
+      console.log('Refreshing ARIO balance for address:', address);
+      const balanceResult = await arnManager.checkBalance(address);
+      console.log('New balance result:', balanceResult);
+      
+      if (profile) {
+        setProfile({
+          ...profile,
+          balance: balanceResult.balance
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing balance:', error);
+    }
+  };
+
   useEffect(() => {
     const disconnectOnReload = async () => {
       setLoading(true);
@@ -308,13 +457,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         address,
         connectWallet,
-        disconnectWallet,
         connectAOsyncWallet,
+        disconnectWallet,
         loading,
         profile,
         profileLoading,
         createProfile,
         updateProfile,
+        requestPrimaryArn,
+        checkPendingArnRequest,
+        refreshBalance
       }}
     >
       {children}

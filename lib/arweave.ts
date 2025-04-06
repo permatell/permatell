@@ -1,7 +1,7 @@
 import Arweave from 'arweave';
 
 // Initialize Arweave
-const arweave = Arweave.init({
+export const arweave = Arweave.init({
   host: 'arweave.net',
   port: 443,
   protocol: 'https'

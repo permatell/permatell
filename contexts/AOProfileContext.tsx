@@ -34,11 +34,8 @@ interface AOProfileContextType {
   profile: AOProfileData | null;
   loading: boolean;
   error: string | null;
-  createProfile: (data: Omit<AOProfileData, "id" | "created_at" | "updated_at">) => Promise<void>;
+  getProfile: () => Promise<void>;
   updateProfile: (data: Partial<AOProfileData>) => Promise<void>;
-  getProfileById: (id: string) => Promise<AOProfileData | null>;
-  getProfileByWalletAddress: (walletAddress: string) => Promise<AOProfileData | null>;
-  fetchProfile: () => Promise<void>;
 }
 
 const AOProfileContext = createContext<AOProfileContextType | undefined>(undefined);
@@ -81,158 +78,89 @@ export const AOProfileProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return res;
   };
 
-  const createProfile = useCallback(async (data: Omit<AOProfileData, "id" | "created_at" | "updated_at">) => {
-    if (!address) {
-      throw new Error("Wallet not connected");
-    }
-
+  const getProfile = useCallback(async () => {
+    if (!address) return;
+    
     setLoading(true);
     setError(null);
-
+    
     try {
-      await sendMessage([
-        { name: "Action", value: "CreateProfile" },
-        { name: "wallet_address", value: address },
-        { name: "username", value: data.username },
-        { name: "bio", value: data.bio },
-        { name: "avatar_url", value: data.avatar_url },
-        { name: "social_links", value: JSON.stringify(data.social_links) },
+      const result = await getDryrunResult([
+        { name: "Action", value: "GetProfile" },
+        { name: "address", value: address },
       ]);
-
-      // Fetch the updated profile
-      await fetchProfile();
+      
+      if (result && typeof result === "object") {
+        setProfile(result as AOProfileData);
+      } else {
+        setProfile(null);
+      }
     } catch (error) {
-      console.error("Error creating profile:", error);
-      setError("Failed to create profile");
-      throw error;
+      console.error("Error fetching profile:", error);
+      setError("Failed to fetch profile");
+      setProfile(null);
     } finally {
       setLoading(false);
     }
   }, [address]);
 
   const updateProfile = useCallback(async (data: Partial<AOProfileData>) => {
-    if (!address || !profile) {
-      throw new Error("Wallet not connected or profile not found");
-    }
-
+    if (!address) return;
+    
     setLoading(true);
     setError(null);
-
+    
     try {
-      const updatedData = {
-        ...profile,
-        ...data,
-        updated_at: new Date().toISOString(),
-      };
-
-      await sendMessage([
+      const tags = [
         { name: "Action", value: "UpdateProfile" },
-        { name: "profile_id", value: profile.id },
-        { name: "wallet_address", value: address },
-        { name: "username", value: updatedData.username },
-        { name: "bio", value: updatedData.bio },
-        { name: "avatar_url", value: updatedData.avatar_url },
-        { name: "social_links", value: JSON.stringify(updatedData.social_links) },
-      ]);
-
-      // Fetch the updated profile
-      await fetchProfile();
+        { name: "address", value: address },
+      ];
+      
+      if (data.username) tags.push({ name: "username", value: data.username });
+      if (data.bio) tags.push({ name: "bio", value: data.bio });
+      if (data.avatar_url) tags.push({ name: "avatar_url", value: data.avatar_url });
+      
+      if (data.social_links) {
+        if (data.social_links.twitter) 
+          tags.push({ name: "twitter", value: data.social_links.twitter });
+        if (data.social_links.github) 
+          tags.push({ name: "github", value: data.social_links.github });
+        if (data.social_links.website) 
+          tags.push({ name: "website", value: data.social_links.website });
+      }
+      
+      await sendMessage(tags);
+      await getProfile(); // Refresh profile after update
     } catch (error) {
       console.error("Error updating profile:", error);
       setError("Failed to update profile");
-      throw error;
     } finally {
       setLoading(false);
     }
-  }, [address, profile]);
-
-  const getProfileById = useCallback(async (id: string): Promise<AOProfileData | null> => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await getDryrunResult([
-        { name: "Action", value: "GetProfileById" },
-        { name: "profile_id", value: id },
-      ]);
-
-      return result;
-    } catch (error) {
-      console.error("Error getting profile by ID:", error);
-      setError("Failed to get profile");
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const getProfileByWalletAddress = useCallback(async (walletAddress: string): Promise<AOProfileData | null> => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await getDryrunResult([
-        { name: "Action", value: "GetProfileByWalletAddress" },
-        { name: "wallet_address", value: walletAddress },
-      ]);
-
-      return result;
-    } catch (error) {
-      console.error("Error getting profile by wallet address:", error);
-      setError("Failed to get profile");
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchProfile = useCallback(async () => {
-    if (!address) {
-      setProfile(null);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await getProfileByWalletAddress(address);
-      setProfile(result);
-    } catch (error) {
-      console.error("Error fetching profile:", error);
-      setError("Failed to fetch profile");
-    } finally {
-      setLoading(false);
-    }
-  }, [address, getProfileByWalletAddress]);
+  }, [address, getProfile]);
 
   useEffect(() => {
     if (address) {
-      fetchProfile();
-    } else {
-      setProfile(null);
+      getProfile();
     }
-  }, [address, fetchProfile]);
+  }, [address, getProfile]);
+
+  const value: AOProfileContextType = {
+    profile,
+    loading,
+    error,
+    getProfile,
+    updateProfile,
+  };
 
   return (
-    <AOProfileContext.Provider
-      value={{
-        profile,
-        loading,
-        error,
-        createProfile,
-        updateProfile,
-        getProfileById,
-        getProfileByWalletAddress,
-        fetchProfile,
-      }}
-    >
+    <AOProfileContext.Provider value={value}>
       {children}
     </AOProfileContext.Provider>
   );
 };
 
-export const useAOProfile = () => {
+export const useAOProfile = (): AOProfileContextType => {
   const context = useContext(AOProfileContext);
   if (context === undefined) {
     throw new Error("useAOProfile must be used within an AOProfileProvider");
