@@ -2,7 +2,7 @@
 
 import Script from 'next/script';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 
 // Google Analytics ID
 const GA_MEASUREMENT_ID = 'G-F6TS0YSXFX';
@@ -15,7 +15,7 @@ declare global {
   }
 }
 
-export default function GoogleAnalytics() {
+function GoogleAnalyticsContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -23,7 +23,7 @@ export default function GoogleAnalytics() {
     if (pathname) {
       // Send pageview event to Google Analytics
       window.gtag('config', GA_MEASUREMENT_ID, {
-        page_path: pathname + searchParams.toString(),
+        page_path: pathname + (searchParams ? searchParams.toString() : ''),
       });
     }
   }, [pathname, searchParams]);
@@ -47,5 +47,13 @@ export default function GoogleAnalytics() {
         }}
       />
     </>
+  );
+}
+
+export default function GoogleAnalytics() {
+  return (
+    <Suspense fallback={null}>
+      <GoogleAnalyticsContent />
+    </Suspense>
   );
 } 
