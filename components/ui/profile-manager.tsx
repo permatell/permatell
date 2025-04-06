@@ -365,13 +365,14 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
           variant="outline"
           onClick={onCancel}
           disabled={isLoading}
-          className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white"
+          className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white shadow-[0_4px_14px_0_rgba(0,0,0,0.2)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.3)] transition-all duration-300"
         >
           Cancel
         </Button>
         <Button
           type="submit"
           isLoading={isLoading}
+          className="shadow-[0_4px_14px_0_rgba(0,0,0,0.2)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.3)] transition-all duration-300"
         >
           {profile?.id ? "Update Profile" : "Create Profile"}
         </Button>

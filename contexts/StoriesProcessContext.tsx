@@ -78,27 +78,39 @@ export const StoriesProcessProvider: React.FC<{
     return res;
   };
 
-  const getDryrunResult = async (tags: { name: string; value: string }[]) => {
-    const res = await dryrun({
-      process: PROCESS_ID,
-      tags,
-    });
+  const getDryrunResult = useCallback(async (tags: { name: string; value: string }[]) => {
+    try {
+      // Add a small delay between requests to prevent rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const res = await dryrun({
+        process: PROCESS_ID,
+        tags,
+      });
 
-    if (address) {
-      getUserStoryPoints(address);
-    }
-
-    if (res.Messages && res.Messages.length > 0) {
-      const data = res.Messages[0]?.Data;
-      try {
-        return JSON.parse(data);
-      } catch (error) {
-        return data;
+      if (address) {
+        getUserStoryPoints(address);
       }
-    }
 
-    throw new Error("No messages returned from the process");
-  };
+      if (res.Messages && res.Messages.length > 0) {
+        const data = res.Messages[0]?.Data;
+        try {
+          return JSON.parse(data);
+        } catch (error) {
+          return data;
+        }
+      }
+
+      throw new Error("No messages returned from the process");
+    } catch (error: any) {
+      if (error.status === 429) {
+        // If rate limited, wait longer before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        throw new Error("Rate limit exceeded. Please try again in a few seconds.");
+      }
+      throw error;
+    }
+  }, [address, getUserStoryPoints]);
 
   const createStory = async (payload: {
     title: string;

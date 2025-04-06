@@ -1,5 +1,8 @@
 "use client";
 
+// Import the debug polyfill
+import "@/lib/debug-polyfill";
+
 import { AOSyncProvider } from "@vela-ventures/aosync-sdk-react";
 
 export const AOSyncContextProvider: React.FC<{ children: React.ReactNode }> = ({
