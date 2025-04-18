@@ -1,6 +1,7 @@
 export const STORY_CATEGORIES = [
   "Uncategorized",
   "Fantasy",
+  "Book",
   "Science Fiction",
   "Mystery",
   "Romance",
