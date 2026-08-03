@@ -68,10 +68,12 @@ const truncateAddress = (address: string | undefined): string => {
 export function WalletStatus() {
   const { 
     address, 
+    walletType,
     profile, 
     profileLoading, 
     connectWallet, 
     connectAOsyncWallet, 
+    connectEvmWallet,
     disconnectWallet,
     refreshBalance
   } = useWallet();
@@ -206,6 +208,37 @@ export function WalletStatus() {
                 </>
               )}
             </Button>
+
+            {/* Separator */}
+            <div className="relative flex items-center py-2">
+              <div className="flex-grow border-t border-gray-700"></div>
+              <span className="flex-shrink mx-4 text-gray-500 text-sm">or</span>
+              <div className="flex-grow border-t border-gray-700"></div>
+            </div>
+
+            {/* EVM Wallet (Ethereum) */}
+            <Button
+              onClick={connectEvmWallet}
+              variant="outline"
+              disabled={profileLoading}
+              className="flex items-center justify-center py-8 text-xl shadow-[0_4px_14px_0_rgba(0,0,0,0.2)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.3)] transition-all duration-300 border-blue-700/50 hover:bg-blue-900/20"
+            >
+              {profileLoading ? (
+                "Connecting..."
+              ) : (
+                <>
+                  <svg width="28" height="28" viewBox="0 0 256 417" className="mr-4">
+                    <path fill="#343434" d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z"/>
+                    <path fill="#8C8C8C" d="M127.962 0L0 212.32l127.962 75.639V154.158z"/>
+                    <path fill="#3C3C3B" d="M127.961 312.187l-1.575 1.92v98.199l1.575 4.6L256 236.587z"/>
+                    <path fill="#8C8C8C" d="M127.962 416.905v-104.72L0 236.585z"/>
+                    <path fill="#141414" d="M127.961 287.958l127.96-75.637-127.96-58.162z"/>
+                    <path fill="#393939" d="M0 212.32l127.96 75.638v-133.8z"/>
+                  </svg>
+                  Ethereum Wallet
+                </>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -255,8 +288,15 @@ export function WalletStatus() {
               <div className="flex flex-col space-y-1">
                 <div className="flex items-center">
                   <p className="text-xs text-gray-500">
-                    <span className="text-gray-500 text-sm">Wallet: </span>
+                    <span className="text-gray-500 text-sm">
+                      {walletType === "evm" ? "ETH Wallet: " : "Wallet: "}
+                    </span>
                     {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ''}
+                    {walletType && (
+                      <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-purple-900/40 text-purple-400 uppercase">
+                        {walletType}
+                      </span>
+                    )}
                   </p>
                   <button 
                     onClick={() => copyToClipboard(address || '', 'address')}

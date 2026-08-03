@@ -1,14 +1,19 @@
 "use client";
 
-import MarkdownEditor from "react-markdown-editor-lite";
-import "react-markdown-editor-lite/lib/index.css";
+import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
 
-MarkdownEditor.use({
-  mode: "dark",
+// Dynamically import the editor to avoid SSR issues (uses `self` which is undefined in Node)
+const MarkdownEditor = dynamic(() => import("react-markdown-editor-lite"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-96 bg-gray-800 rounded-md animate-pulse flex items-center justify-center text-gray-500">
+      Loading editor...
+    </div>
+  ),
 });
 
 interface CustomMarkdownEditorProps {
@@ -34,7 +39,7 @@ export function CustomMarkdownEditor({
       value={value}
       onChange={handleEditorChange}
       className={`markdown-editor ${className}`}
-      renderHTML={(text) => (
+      renderHTML={(text: string) => (
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkBreaks]}
           rehypePlugins={[rehypeRaw]}

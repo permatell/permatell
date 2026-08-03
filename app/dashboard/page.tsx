@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { CardContainer } from "@/components/ui/card-container";
 import { Input } from "@/components/ui/input";
@@ -35,15 +35,22 @@ const Dashboard = () => {
   const { getAllStoryPoints, allUsersStoryPoints } = useStoryPointsProcess();
   const [topAuthors, setTopAuthors] = useState<[string, number][]>([]);
   const [isHovering, setIsHovering] = useState(false);
+  const requestedStoriesRef = useRef(false);
+  const requestedStoryPointsRef = useRef(false);
 
   useEffect(() => {
-    if (stories.length === 0 && !loading) {
+    if (!requestedStoriesRef.current && stories.length === 0 && !loading) {
+      requestedStoriesRef.current = true;
       getStories();
     }
   }, [getStories, stories.length, loading]);
 
   useEffect(() => {
-    if (Object.keys(allUsersStoryPoints).length === 0) {
+    if (
+      !requestedStoryPointsRef.current &&
+      Object.keys(allUsersStoryPoints).length === 0
+    ) {
+      requestedStoryPointsRef.current = true;
       getAllStoryPoints();
     }
   }, [getAllStoryPoints, allUsersStoryPoints]);

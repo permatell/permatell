@@ -2,18 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { useWallet } from "@/contexts/WalletContext";
-import { connect, createDataItemSigner } from "@permaweb/aoconnect";
-
-const GATEWAY_URL = "https://arweave.net";
-const MU_URL = "https://mu.ao-testnet.xyz";
-const CU_URL = "https://cu.ao-testnet.xyz";
-const PROCESS_ID = "CiCoT60SUbCAJYY2ncv_-BJOQvGB0tHib_mTLJv4Q6Q"; // Using the same process ID as StoryPoints for now
-
-const { dryrun, message } = connect({
-  MU_URL,
-  CU_URL,
-  GATEWAY_URL,
-});
+import { getAO, PROCESS_IDS, createDataItemSigner } from "@/lib/ao-config";
 
 export interface AOProfileData {
   id: string;
@@ -47,8 +36,9 @@ export const AOProfileProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [error, setError] = useState<string | null>(null);
 
   const getDryrunResult = async (tags: { name: string; value: string }[]) => {
+    const { dryrun } = getAO();
     const res = await dryrun({
-      process: PROCESS_ID,
+      process: PROCESS_IDS.storyPoints,
       tags,
     });
 
@@ -70,8 +60,9 @@ export const AOProfileProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     const signer = createDataItemSigner(globalThis.arweaveWallet);
+    const { message } = getAO();
     const res = await message({
-      process: PROCESS_ID,
+      process: PROCESS_IDS.storyPoints,
       tags,
       signer,
     });
@@ -80,16 +71,16 @@ export const AOProfileProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const getProfile = useCallback(async () => {
     if (!address) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const result = await getDryrunResult([
         { name: "Action", value: "GetProfile" },
         { name: "address", value: address },
       ]);
-      
+
       if (result && typeof result === "object") {
         setProfile(result as AOProfileData);
       } else {
@@ -106,29 +97,29 @@ export const AOProfileProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const updateProfile = useCallback(async (data: Partial<AOProfileData>) => {
     if (!address) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const tags = [
         { name: "Action", value: "UpdateProfile" },
         { name: "address", value: address },
       ];
-      
+
       if (data.username) tags.push({ name: "username", value: data.username });
       if (data.bio) tags.push({ name: "bio", value: data.bio });
       if (data.avatar_url) tags.push({ name: "avatar_url", value: data.avatar_url });
-      
+
       if (data.social_links) {
-        if (data.social_links.twitter) 
+        if (data.social_links.twitter)
           tags.push({ name: "twitter", value: data.social_links.twitter });
-        if (data.social_links.github) 
+        if (data.social_links.github)
           tags.push({ name: "github", value: data.social_links.github });
-        if (data.social_links.website) 
+        if (data.social_links.website)
           tags.push({ name: "website", value: data.social_links.website });
       }
-      
+
       await sendMessage(tags);
       await getProfile(); // Refresh profile after update
     } catch (error) {
@@ -166,4 +157,4 @@ export const useAOProfile = (): AOProfileContextType => {
     throw new Error("useAOProfile must be used within an AOProfileProvider");
   }
   return context;
-}; 
+};

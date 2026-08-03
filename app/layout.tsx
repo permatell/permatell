@@ -7,10 +7,15 @@ import { Navbar } from "@/components/ui/nav-bar";
 import { StoryPointsProcessProvider } from "@/contexts/StoryPointsProcessContext";
 import { AOSyncContextProvider } from "@/contexts/AOSyncContext";
 import { DisclaimerPopup } from "@/components/ui/disclaimer-popup";
-import { AOProfileProvider } from "@/contexts/AOProfileContext";
+import { EvmWalletProvider } from "@/contexts/EvmWalletContext";
+import { NetworkModeProvider } from "@/contexts/NetworkModeContext";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
 import "@/lib/debug-polyfill";
 import { Toaster } from "sonner";
+
+// Force dynamic rendering for all pages – aoconnect uses `self` which is
+// unavailable during static prerendering in Node.js.
+export const dynamic = "force-dynamic";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -28,7 +33,6 @@ export const metadata: Metadata = {
   description: "PermaTell is a platform for creating and sharing stories on the Permaweb.",
   icons: {
     icon: [
-      { url: '/favicon.ico', type: 'image/x-icon' },
       { url: '/favicon.svg', type: 'image/svg+xml' }
     ],
     apple: [
@@ -75,24 +79,26 @@ export default function RootLayout({
             <div className="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] h-[450px] rounded-full bg-gradient-to-r from-blue-500/30 to-emerald-500/30 blur-3xl animate-blob animation-delay-4000" />
           </div>
         </div>
-        <AOSyncContextProvider>
-          <WalletProvider>
-            <StoryPointsProcessProvider>
-              <StoriesProcessProvider>
-                <AOProfileProvider>
-                  <Navbar />
-                  <main>
-                    <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 relative">
-                      {children}
-                    </div>
-                  </main>
-                  <DisclaimerPopup />
-                  <Toaster position="top-right" />
-                </AOProfileProvider>
-              </StoriesProcessProvider>
-            </StoryPointsProcessProvider>
-          </WalletProvider>
-        </AOSyncContextProvider>
+        <EvmWalletProvider>
+          <NetworkModeProvider>
+            <AOSyncContextProvider>
+              <WalletProvider>
+                <StoryPointsProcessProvider>
+                  <StoriesProcessProvider>
+                    <Navbar />
+                    <main>
+                      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 relative">
+                        {children}
+                      </div>
+                    </main>
+                    <DisclaimerPopup />
+                    <Toaster position="top-right" />
+                  </StoriesProcessProvider>
+                </StoryPointsProcessProvider>
+              </WalletProvider>
+            </AOSyncContextProvider>
+          </NetworkModeProvider>
+        </EvmWalletProvider>
       </body>
     </html>
   );

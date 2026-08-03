@@ -21,10 +21,11 @@ import { STORY_CATEGORIES } from "@/app/constants/categories";
 import { Separator } from "@/components/ui/separator";
 import { motion } from "framer-motion";
 import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
+import type { StoryAtomicAssetResult } from "@/lib/permatellAssets";
 
 export default function CreateStoryPage() {
   const { createStory, loading } = useStoriesProcess();
-  const { address } = useWallet();
+  const { address, walletType } = useWallet();
   const router = useRouter();
 
   const [title, setTitle] = useState("");
@@ -32,20 +33,37 @@ export default function CreateStoryPage() {
   const [isPublic, setIsPublic] = useState(true);
   const [coverImage, setCoverImage] = useState("");
   const [category, setCategory] = useState<string>("Uncategorized");
+  const [mintAtomicAsset, setMintAtomicAsset] = useState(false);
+  const [assetDescription, setAssetDescription] = useState("");
+  const [atomicAsset, setAtomicAsset] = useState<StoryAtomicAssetResult | null>(
+    null
+  );
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage("");
+    setAtomicAsset(null);
     try {
-      await createStory({
+      const result = await createStory({
         title,
         content,
         is_public: isPublic,
         cover_image: coverImage,
         category,
+        mint_atomic_asset: mintAtomicAsset,
+        asset_description: assetDescription,
       });
+      if (result.atomicAsset) {
+        setAtomicAsset(result.atomicAsset);
+        return;
+      }
       router.push("/dashboard");
     } catch (error) {
       console.error("Error creating story:", error);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not create story."
+      );
     }
   };
 
@@ -138,13 +156,106 @@ export default function CreateStoryPage() {
             />
           </div>
 
+          <div className="space-y-4 rounded-lg border border-gray-800 bg-black/30 p-4">
+            <div className="flex items-start space-x-3">
+              <Checkbox
+                id="mintAtomicAsset"
+                checked={mintAtomicAsset}
+                onCheckedChange={(checked) =>
+                  setMintAtomicAsset(checked as boolean)
+                }
+              />
+              <div className="space-y-1">
+                <Label htmlFor="mintAtomicAsset" className="text-gray-200">
+                  Mint a story atomic asset
+                </Label>
+                <p className="text-sm text-gray-400">
+                  Creates a transferable AO atomic asset for this story after
+                  the story process write succeeds.
+                </p>
+              </div>
+            </div>
+
+            {mintAtomicAsset && (
+              <div>
+                <Label
+                  htmlFor="assetDescription"
+                  className="text-gray-200 text-sm mb-2 block"
+                >
+                  Asset description
+                </Label>
+                <Input
+                  type="text"
+                  id="assetDescription"
+                  value={assetDescription}
+                  onChange={(e) => setAssetDescription(e.target.value)}
+                  placeholder="Optional description for Bazar and permaweb discovery"
+                  className="bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
+                />
+              </div>
+            )}
+          </div>
+
+          {errorMessage && (
+            <div className="rounded-lg border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+              {errorMessage}
+            </div>
+          )}
+
+          {walletType === "evm" && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-950/30 p-4 text-sm text-amber-100">
+              Story creation currently requires a Wander or Beacon wallet signer.
+            </div>
+          )}
+
+          {atomicAsset && (
+            <div className="rounded-lg border border-cyan-500/40 bg-cyan-950/20 p-4 text-sm text-cyan-100">
+              <p className="font-medium">Atomic asset minted.</p>
+              <p className="mt-1 break-all text-cyan-200">
+                {atomicAsset.assetId}
+              </p>
+              {atomicAsset.storyId && (
+                <p className="mt-2 break-all text-xs text-cyan-200/80">
+                  Story process: {atomicAsset.storyId}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-3">
+                <a
+                  href={atomicAsset.bazarUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-300 underline underline-offset-4"
+                >
+                  Open in Bazar
+                </a>
+                <a
+                  href={atomicAsset.arweaveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-300 underline underline-offset-4"
+                >
+                  Open on Arweave
+                </a>
+                <button
+                  type="button"
+                  onClick={() => router.push("/dashboard")}
+                  className="text-cyan-300 underline underline-offset-4"
+                >
+                  Go to dashboard
+                </button>
+              </div>
+            </div>
+          )}
+
           <Button
             type="submit"
-            disabled={loading || !address}
+            disabled={loading || !address || walletType === "evm"}
             className="w-full bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600 text-white border-none mt-8"
           >
             {!address
               ? "Connect Wallet to Create"
+              : walletType === "evm"
+              ? "Use Wander or Beacon to Create"
               : loading
               ? "Creating..."
               : "Create Story"}

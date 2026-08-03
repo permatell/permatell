@@ -134,14 +134,49 @@ export default function ProfilePage() {
   }
 
   if (!profile) {
+    const hasConnectedWallet = Boolean(address);
+
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <h1 className="text-2xl font-bold mb-4">No Profile Found</h1>
-        <p className="text-gray-400 mb-6">You need to connect your wallet to view your profile.</p>
-        <Link href="/" className="flex items-center text-purple-400 hover:text-purple-300">
+      <div className="container mx-auto px-4 py-8">
+        <Link href="/" className="mb-6 inline-flex items-center text-gray-400 hover:text-white">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Home
         </Link>
+
+        {hasConnectedWallet && isEditing ? (
+          <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+            <ProfileManager
+              onSave={() => setIsEditing(false)}
+              onCancel={() => setIsEditing(false)}
+            />
+          </div>
+        ) : (
+          <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-purple-500/10 text-purple-300">
+              <User className="h-7 w-7" />
+            </div>
+            <h1 className="mb-3 text-2xl font-bold">No Profile Found</h1>
+            <p className="mb-2 max-w-lg text-gray-400">
+              {hasConnectedWallet
+                ? "This wallet is connected, but no AO profile was loaded for it yet."
+                : "Connect your wallet to view or create your profile."}
+            </p>
+            {hasConnectedWallet && (
+              <p className="mb-6 max-w-lg break-all text-sm text-gray-500">
+                Connected wallet: {address}
+              </p>
+            )}
+            {hasConnectedWallet && (
+              <Button
+                onClick={() => setIsEditing(true)}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Create Profile
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -174,13 +209,12 @@ export default function ProfilePage() {
           {/* Profile Header */}
           <div className="relative h-48 bg-gradient-to-r from-purple-900 to-blue-900">
             {profile.banner ? (
-              <Image
+              <img
                 src={profile.banner.startsWith('http') 
                   ? profile.banner 
                   : `https://arweave.net/${profile.banner}`}
                 alt="Profile Banner"
-                fill
-                className="object-cover"
+                className="absolute inset-0 h-full w-full object-cover"
               />
             ) : (
               <div className="absolute inset-0 bg-gradient-to-r from-purple-900 to-blue-900"></div>
@@ -189,12 +223,10 @@ export default function ProfilePage() {
               <div className="flex items-center gap-4">
                 <div className="relative">
                   {profile?.thumbnail ? (
-                    <Image
+                    <img
                       src={profile.thumbnail}
                       alt={profile.displayName || profile.userName || "Profile"}
-                      width={100}
-                      height={100}
-                      className="rounded-full"
+                      className="h-[100px] w-[100px] rounded-full object-cover"
                     />
                   ) : (
                     <div className="w-[100px] h-[100px] bg-black/60 rounded-full flex items-center justify-center">
@@ -203,12 +235,10 @@ export default function ProfilePage() {
                   )}
                   {profile?.banner && (
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full overflow-hidden border-2 border-black">
-                      <Image
+                      <img
                         src={profile.banner}
                         alt="Banner"
-                        width={32}
-                        height={32}
-                        className="object-cover"
+                        className="h-full w-full object-cover"
                       />
                     </div>
                   )}

@@ -4,11 +4,10 @@ import { useEffect, useState } from "react";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-
 export function LoadingScreen() {
   const [progress, setProgress] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const { getStories, stories } = useStoriesProcess();
+  const { getStories } = useStoriesProcess();
   const router = useRouter();
 
   useEffect(() => {
@@ -30,29 +29,37 @@ export function LoadingScreen() {
     const loadData = async () => {
       try {
         await getStories();
-        setProgress(100);
-        setIsLoading(false);
       } catch (error) {
         console.error("Error loading initial data:", error);
+      } finally {
+        setProgress(100);
         setIsLoading(false);
       }
     };
 
     loadData();
+
+    // Safety timeout: navigate to dashboard after 12s even if fetch hangs
+    const safetyTimeout = setTimeout(() => {
+      setProgress(100);
+      setIsLoading(false);
+    }, 12000);
+
+    return () => clearTimeout(safetyTimeout);
   }, []);
 
   useEffect(() => {
-    if (!isLoading && stories && stories.length > 0) {
+    if (!isLoading) {
       const timer = setTimeout(() => {
         router.push("/dashboard");
       }, 500);
 
       return () => clearTimeout(timer);
     }
-  }, [isLoading, stories, router]);
+  }, [isLoading, router]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-black via-gray-900 to-slate-900">
+    <div className="relative z-50 flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-black via-gray-900 to-slate-900">
       <div className="absolute inset-0 w-full h-full overflow-hidden">
         <div className="absolute inset-0 opacity-50">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-gradient-to-r from-purple-500/30 to-cyan-500/30 blur-3xl animate-blob" />
