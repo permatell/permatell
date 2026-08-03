@@ -1,7 +1,7 @@
 // Initialize ARIO client for gateway interactions
 import { ARIO } from '@ar.io/sdk/web';
 import type { JWKInterface as JWK } from 'arweave/node/lib/wallet';
-import { connect } from '@permaweb/aoconnect';
+import { aoConnect } from '@/lib/ao-config';
 
 // Define Gateway response types based on SDK documentation
 interface GatewaySettings {
@@ -106,8 +106,14 @@ interface AOMessage {
 // Flag to track AO availability
 let isAOAvailable = true;
 
-// Initialize AO connection with proper configuration
-const aoConnection = connect();
+// Lazy-initialize AO connection to avoid SSR issues
+let _aoConnection: ReturnType<typeof aoConnect> | null = null;
+function getAOConnection() {
+  if (!_aoConnection) {
+    _aoConnection = aoConnect();
+  }
+  return _aoConnection;
+}
 
 // Helper function to handle AO responses
 async function handleAOResponse<T>(response: any): Promise<T> {

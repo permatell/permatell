@@ -20,7 +20,9 @@ export async function getPrimaryArn(address: string): Promise<string | null> {
     });
     
     if (!response.ok) {
-      console.warn(`Failed to fetch ARNs for address ${address}: ${response.statusText}`);
+      if (response.status !== 429) {
+        console.warn(`Failed to fetch ARNs for address ${address}: ${response.statusText}`);
+      }
       return null;
     }
     
@@ -77,7 +79,9 @@ export async function getAllArns(address: string): Promise<string[]> {
     });
     
     if (!response.ok) {
-      console.warn(`Failed to fetch ARNs for address ${address}: ${response.statusText}`);
+      if (response.status !== 429) {
+        console.warn(`Failed to fetch ARNs for address ${address}: ${response.statusText}`);
+      }
       return [];
     }
     

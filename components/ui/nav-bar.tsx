@@ -2,23 +2,71 @@
 import { useRouter } from "next/navigation";
 import { IoIosArrowBack, IoIosArrowForward } from "react-icons/io";
 import { FaStar } from "react-icons/fa";
+import { Check, ChevronDown, Server, Wifi } from "lucide-react";
 import { WalletStatus } from "@/components/ui/wallet-status";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
+import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { useWallet } from "@/contexts/WalletContext";
-import { useEffect } from "react";
+import { useNetworkMode } from "@/contexts/NetworkModeContext";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+
+function formatNodeLabel(url: string | undefined): string {
+  if (!url) return "Portal";
+  try {
+    return new URL(url).hostname.replace(/^hb\./, "").replace(/^www\./, "");
+  } catch {
+    return url.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  }
+}
 
 export function Navbar() {
   const router = useRouter();
   const { userStoryPoints, getUserStoryPoints } = useStoryPointsProcess();
+  const { getStories } = useStoriesProcess();
   const { address } = useWallet();
+  const { networkMode, setNetworkMode, isLegacy } = useNetworkMode();
+  const [networkOpen, setNetworkOpen] = useState(false);
+  const networkMenuRef = useRef<HTMLDivElement>(null);
+  const canSwitchNetwork = process.env.NEXT_PUBLIC_AO_MODE !== "mainnet";
+  const writeNode =
+    process.env.NEXT_PUBLIC_AO_WRITE_URL ||
+    process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL ||
+    process.env.NEXT_PUBLIC_HYPERBEAM_URL ||
+    "https://hb.portalinto.com";
+  const nodeLabel = formatNodeLabel(writeNode);
+  const scheduler = process.env.NEXT_PUBLIC_AO_MAINNET_SCHEDULER || "";
+  const shortScheduler = scheduler
+    ? `${scheduler.slice(0, 6)}...${scheduler.slice(-4)}`
+    : "Not set";
 
   useEffect(() => {
     if (address) {
       getUserStoryPoints(address);
     }
   }, [address]);
+
+  useEffect(() => {
+    const closeMenu = (event: MouseEvent) => {
+      if (
+        networkMenuRef.current &&
+        !networkMenuRef.current.contains(event.target as Node)
+      ) {
+        setNetworkOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeMenu);
+    return () => document.removeEventListener("mousedown", closeMenu);
+  }, []);
+
+  const switchNetwork = (next: "mainnet" | "legacy") => {
+    setNetworkMode(next);
+    setNetworkOpen(false);
+    getStories().catch(() => {});
+    if (address) getUserStoryPoints(address);
+  };
 
   return (
     <header className="relative z-10 bg-gradient-to-br from-black via-gray-900 to-slate-900">
@@ -59,8 +107,111 @@ export function Navbar() {
             </Link>
           </div>
           <div className="flex items-center space-x-4">
+            <nav className="hidden md:flex items-center space-x-1">
+              <Link
+                href="/dashboard"
+                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+              >
+                Stories
+              </Link>
+              <Link
+                href="/arns"
+                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+              >
+                ArNS
+              </Link>
+              <Link
+                href="/author-board"
+                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+              >
+                Leaderboard
+              </Link>
+            </nav>
+            <div className="relative" ref={networkMenuRef}>
+              <button
+                type="button"
+                onClick={() => setNetworkOpen((open) => !open)}
+                className="inline-flex h-8 items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 text-xs font-medium text-emerald-100 transition-colors hover:border-emerald-300/40 hover:bg-emerald-400/15"
+                aria-haspopup="menu"
+                aria-expanded={networkOpen}
+                title="AO network status"
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.9)]" />
+                <span>{isLegacy ? "Legacy" : "Mainnet"}</span>
+                <ChevronDown className="h-3.5 w-3.5 text-emerald-200/80" />
+              </button>
+
+              {networkOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-2 w-72 rounded-lg border border-white/10 bg-gray-950/95 p-3 text-sm text-gray-200 shadow-xl backdrop-blur"
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-medium text-white">
+                      <Wifi className="h-4 w-4 text-emerald-300" />
+                      AO Network
+                    </div>
+                    <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-xs text-emerald-200">
+                      Active
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 border-y border-white/10 py-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-gray-400">Mode</span>
+                      <span className="font-medium text-white">
+                        {isLegacy ? "Legacy" : "Mainnet"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-gray-400">Write node</span>
+                      <span className="max-w-40 truncate font-medium text-white">
+                        {nodeLabel}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-gray-400">Scheduler</span>
+                      <span className="font-mono text-xs text-gray-300">
+                        {shortScheduler}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3">
+                    {canSwitchNetwork ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => switchNetwork("mainnet")}
+                          className="flex items-center justify-center gap-1.5 rounded-md border border-white/10 px-2 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+                        >
+                          {!isLegacy && <Check className="h-3.5 w-3.5" />}
+                          Mainnet
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => switchNetwork("legacy")}
+                          className="flex items-center justify-center gap-1.5 rounded-md border border-white/10 px-2 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+                        >
+                          {isLegacy && <Check className="h-3.5 w-3.5" />}
+                          Legacy
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2 text-xs text-gray-400">
+                        <Server className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          Network switching is locked by the current environment.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             {address && (
               <>
+                <div className="h-6 w-px bg-gray-600 hidden md:block"></div>
                 <div className="flex items-center space-x-1">
                   <FaStar size={20} className="text-yellow-500" />
                   <span className="font-semibold text-lg leading-none flex items-center mt-[2px] bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">

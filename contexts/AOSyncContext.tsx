@@ -4,10 +4,13 @@
 import "@/lib/debug-polyfill";
 
 import { AOSyncProvider } from "@vela-ventures/aosync-sdk-react";
+import { getAOConfig } from "@/lib/ao-config";
 
 export const AOSyncContextProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  const config = getAOConfig();
+
   return (
     <AOSyncProvider
       gatewayConfig={{
@@ -16,7 +19,7 @@ export const AOSyncContextProvider: React.FC<{ children: React.ReactNode }> = ({
         protocol: "https",
       }}
       appInfo={{ name: "PermaTell" }}
-      muUrl="https://mu.ao-testnet.xyz"
+      muUrl={config.mu_url}
     >
       {children}
     </AOSyncProvider>

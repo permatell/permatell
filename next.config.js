@@ -1,14 +1,21 @@
 const webpack = require('webpack');
+const path = require('path');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['arweave.net'],
+    domains: ['arweave.net', 'arweave.nyc'],
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'arweave.net',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'arweave.nyc',
         port: '',
         pathname: '/**',
       },
@@ -23,6 +30,18 @@ const nextConfig = {
         fullySpecified: false,
       },
     });
+
+    if (isServer) {
+      // Polyfill `self` for server-side so that @permaweb/aoconnect
+      // (which references `self` internally) can be imported during SSR.
+      config.plugins.push(
+        new webpack.BannerPlugin({
+          raw: true,
+          entryOnly: false,
+          banner: 'if(typeof self==="undefined"){globalThis.self=globalThis;}',
+        })
+      );
+    }
 
     // Add polyfills for node modules
     if (!isServer) {
@@ -52,9 +71,14 @@ const nextConfig = {
     }
 
     // Add specific alias for arbundles utils
+    const aoconnectResolved = require.resolve("@permaweb/aoconnect");
+
     config.resolve.alias = {
       ...config.resolve.alias,
       "$/utils": require.resolve("@dha-team/arbundles/build/node/esm/src/utils"),
+      // Force Next/Webpack to use the ESM entry instead of the prebundled
+      // `dist/browser.js` (which can trip Next's parser with newer aoconnect versions).
+      "@permaweb/aoconnect": path.join(path.dirname(aoconnectResolved), "index.js"),
     };
 
     // Add specific handling for arbundles package
@@ -76,15 +100,26 @@ const nextConfig = {
     "@ardrive/turbo-sdk",
     "@dha-team/arbundles",
     "@permaweb/aoconnect",
+    "@permaweb/aoprofile",
+    "@permaweb/libs",
+    "@rainbow-me/rainbowkit",
+    "wagmi",
+    "viem",
   ],
+  // Proxy API requests to the configured CU endpoint.
+  // This can help avoid CORS issues in development.
   async rewrites() {
+    const cuUrl = process.env.NEXT_PUBLIC_HYPERBEAM_URL ||
+      process.env.NEXT_PUBLIC_AO_CU_URL ||
+      'https://cu.ao-testnet.xyz';
+
     return [
       {
         source: '/api/ao/:path*',
-        destination: 'https://cu31.ao-testnet.xyz/:path*',
+        destination: `${cuUrl}/:path*`,
       },
     ];
   },
 };
 
-module.exports = nextConfig; 
+module.exports = nextConfig;

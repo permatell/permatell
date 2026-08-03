@@ -3,16 +3,22 @@
 import React, { useState, useEffect } from "react";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { FaUser } from "react-icons/fa";
-import { connect } from "@permaweb/aoconnect";
 import AOProfile from '@permaweb/aoprofile';
 import Arweave from 'arweave';
 import { profileCache, generateCacheKey } from "@/utils/cache";
+import { aoConnect } from "@/lib/ao-config";
 
 // Initialize Arweave
 const arweave = Arweave.init({});
 
-// Initialize AO connection
-const aoConnection = connect();
+// Lazy-initialize AO connection to avoid SSR issues
+let _aoConnection: ReturnType<typeof aoConnect> | null = null;
+function getAOConnection() {
+  if (!_aoConnection) {
+    _aoConnection = aoConnect();
+  }
+  return _aoConnection;
+}
 
 // Create a dummy signer for read-only operations
 const dummySigner = {
@@ -57,7 +63,7 @@ export const AuthorAvatar: React.FC<AuthorAvatarProps> = ({
         
         // Initialize the AO Profile SDK
         const { getProfileByWalletAddress } = AOProfile.init({ 
-          ao: aoConnection, 
+          ao: getAOConnection(), 
           arweave,
           signer: dummySigner
         });
