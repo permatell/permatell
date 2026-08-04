@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { CardContainer } from "@/components/ui/card-container";
 import { Input } from "@/components/ui/input";
 import { useWallet } from "@/contexts/WalletContext";
-import { claimPompCampaign } from "@/lib/pomp";
+import { claimPompCampaign, type PompCampaignClaimResult } from "@/lib/pomp";
 
 export default function PompClaimPage() {
   const params = useParams<{ assetId: string }>();
@@ -17,7 +17,8 @@ export default function PompClaimPage() {
   const { address, connectWallet, loading, walletType } = useWallet();
   const [claimWord, setClaimWord] = useState("");
   const [claiming, setClaiming] = useState(false);
-  const [claimedMessageId, setClaimedMessageId] = useState("");
+  const [claimResult, setClaimResult] =
+    useState<PompCampaignClaimResult | null>(null);
 
   const arweaveAddress = walletType === "wander" ? address : null;
 
@@ -32,15 +33,15 @@ export default function PompClaimPage() {
     }
 
     setClaiming(true);
-    setClaimedMessageId("");
+    setClaimResult(null);
     try {
       const result = await claimPompCampaign({
         assetId,
         claimWord,
         claimant: arweaveAddress,
       });
-      setClaimedMessageId(result.messageId);
-      toast.success("POMP claim sent to AO.");
+      setClaimResult(result);
+      toast.success(result.message || "POMP claimed.");
     } catch (error: any) {
       toast.error(error?.message || "Unable to claim this POMP.");
     } finally {
@@ -60,7 +61,8 @@ export default function PompClaimPage() {
         </div>
         <h1 className="mt-4 text-4xl font-bold text-white">Claim POMP</h1>
         <p className="mt-3 text-gray-300">
-          Enter the event word to claim one edition from this POMP campaign.
+          Enter the event word to receive one balance from this POMP campaign
+          asset.
         </p>
       </div>
 
@@ -125,6 +127,10 @@ export default function PompClaimPage() {
             placeholder="Enter the word shared at the event"
             className="bg-black/40 border-gray-800"
           />
+          <p className="text-xs text-gray-400">
+            A successful claim records your wallet in the POMP asset process and
+            transfers one edition balance to your Arweave wallet.
+          </p>
           <Button
             type="button"
             onClick={handleClaim}
@@ -136,15 +142,31 @@ export default function PompClaimPage() {
           </Button>
         </div>
 
-        {claimedMessageId && (
+        {claimResult && (
           <div className="mt-5 rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-            <p className="font-medium">Claim message sent.</p>
-            <p className="mt-2 break-all font-mono text-xs">
-              {claimedMessageId}
+            <p className="font-medium">
+              {claimResult.status === "Claimed"
+                ? "POMP claimed."
+                : claimResult.status}
             </p>
+            <p className="mt-1">{claimResult.message}</p>
+            <p className="mt-2 break-all font-mono text-xs">
+              Message: {claimResult.messageId}
+            </p>
+            {claimResult.recipient && (
+              <p className="mt-2 break-all font-mono text-xs">
+                Recipient: {claimResult.recipient}
+              </p>
+            )}
+            {typeof claimResult.remaining === "number" && (
+              <p className="mt-2 text-emerald-100/75">
+                Remaining claims: {claimResult.remaining}
+              </p>
+            )}
             <p className="mt-2 text-emerald-100/75">
-              AO indexing can take a moment. Refresh the asset in Bazar or the
-              POMP page to see the updated balance and claim state.
+              This POMP appears as a balance on the campaign asset, not as a
+              separate child asset. Bazar/Arweave indexing can take a moment to
+              show the updated balance.
             </p>
           </div>
         )}

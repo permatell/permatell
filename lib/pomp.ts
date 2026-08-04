@@ -184,6 +184,20 @@ export interface PompAtomicAssetResult {
   };
 }
 
+export interface PompCampaignClaimResult {
+  messageId: string;
+  assetId: string;
+  bazarUrl: string;
+  arweaveUrl: string;
+  accepted: boolean;
+  status: string;
+  responseAction: string;
+  message: string;
+  remaining?: number;
+  claimedAt?: string;
+  recipient?: string;
+}
+
 export interface UploadResult {
   id: string;
   url: string;
@@ -368,6 +382,102 @@ async function resolveCampaignCodeHash(
   if (campaign.claimCodeHash) return normalizeText(campaign.claimCodeHash);
   if (campaign.claimWord) return hashPompClaimWord(assetId, campaign.claimWord);
   throw new Error("POMP campaign requires a secret claim word.");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function resultTagsToRecord(tags: any): Record<string, string> {
+  if (!tags) return {};
+  if (!Array.isArray(tags) && typeof tags === "object") {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(tags)) {
+      if (typeof value === "string") out[key] = value;
+    }
+    return out;
+  }
+  const out: Record<string, string> = {};
+  for (const tag of tags || []) {
+    const name = normalizeText(tag?.name || tag?.Name);
+    const value = normalizeText(tag?.value || tag?.Value);
+    if (name) out[name] = value;
+  }
+  return out;
+}
+
+function parseJsonObject(value: unknown): Record<string, any> {
+  if (typeof value !== "string" || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parsePompClaimResult(
+  result: any
+): Pick<
+  PompCampaignClaimResult,
+  "accepted" | "status" | "responseAction" | "message" | "remaining" | "claimedAt" | "recipient"
+> | null {
+  const messages = Array.isArray(result?.Messages) ? result.Messages : [];
+  for (const message of messages) {
+    const tags = resultTagsToRecord(message?.Tags);
+    const action = tags.Action || message?.Action || "";
+    if (!String(action).startsWith("POMP-Claim-")) continue;
+
+    const data = parseJsonObject(message?.Data);
+    const status = tags.Status || data.status || "";
+    const accepted = action === "POMP-Claim-Success" || status === "Claimed";
+    return {
+      accepted,
+      status: status || (accepted ? "Claimed" : "Error"),
+      responseAction: action,
+      message:
+        data.message ||
+        data.error ||
+        (accepted ? "POMP claimed." : "POMP claim was rejected."),
+      remaining:
+        typeof data.remaining === "number"
+          ? data.remaining
+          : data.remaining
+          ? Number(data.remaining)
+          : undefined,
+      claimedAt: data.claimedAt ? String(data.claimedAt) : undefined,
+      recipient: data.recipient || tags.Recipient,
+    };
+  }
+  return null;
+}
+
+async function readPompCampaignClaimResult(input: {
+  ao: any;
+  process: string;
+  messageId: string;
+}) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      const result = await withHyperbeamGlobalFetch(() =>
+        input.ao.result({
+          process: input.process,
+          message: input.messageId,
+        })
+      );
+      const parsed = parsePompClaimResult(result);
+      if (parsed) return parsed;
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(1200 + attempt * 400);
+  }
+
+  if (lastError) {
+    console.warn("[pomp] Unable to read claim result before timeout.", lastError);
+  }
+  return null;
 }
 
 function poapChain(network: PoapNetworkConfig): Chain {
@@ -1162,7 +1272,7 @@ export async function claimPompCampaign(input: {
   assetId: string;
   claimWord: string;
   claimant: string;
-}): Promise<{ messageId: string; assetId: string; bazarUrl: string; arweaveUrl: string }> {
+}): Promise<PompCampaignClaimResult> {
   const assetId = normalizeAoId(input.assetId);
   if (!assetId) throw new Error("A valid POMP asset id is required.");
   const claimant = normalizeAoId(input.claimant);
@@ -1185,11 +1295,29 @@ export async function claimPompCampaign(input: {
       })
     )
   );
+  const claimResult = await readPompCampaignClaimResult({
+    ao,
+    process: assetId,
+    messageId,
+  });
+
+  if (claimResult && !claimResult.accepted) {
+    throw new Error(claimResult.message || "POMP claim was rejected.");
+  }
 
   return {
     messageId,
     assetId,
     bazarUrl: `https://bazar.arweave.net/#/asset/${assetId}`,
     arweaveUrl: `https://arweave.net/${assetId}`,
+    accepted: claimResult?.accepted ?? true,
+    status: claimResult?.status || "Submitted",
+    responseAction: claimResult?.responseAction || "Pending-Result",
+    message:
+      claimResult?.message ||
+      "Claim message submitted. AO result is still indexing.",
+    remaining: claimResult?.remaining,
+    claimedAt: claimResult?.claimedAt,
+    recipient: claimResult?.recipient,
   };
 }

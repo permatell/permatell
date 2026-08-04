@@ -335,6 +335,16 @@ export default function PompPage() {
     setArtworkPreviewUrl(file ? URL.createObjectURL(file) : "");
   };
 
+  const copyClaimLink = async (claimUrl: string) => {
+    const url = `${window.location.origin}${claimUrl}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Claim link copied.");
+    } catch {
+      toast.error("Unable to copy claim link.");
+    }
+  };
+
   useEffect(() => {
     return () => {
       if (artworkPreviewUrl) URL.revokeObjectURL(artworkPreviewUrl);
@@ -1216,10 +1226,19 @@ export default function PompPage() {
                 </p>
               )}
               {asset.claimUrl && (
-                <p className="mt-2 break-all text-xs text-purple-100/80">
-                  Claim link: {window.location.origin}
-                  {asset.claimUrl}
-                </p>
+                <div className="mt-3 rounded-md border border-purple-400/20 bg-black/25 p-3">
+                  <p className="text-sm font-medium text-white">
+                    Audience claim link
+                  </p>
+                  <p className="mt-1 break-all font-mono text-xs text-purple-100/80">
+                    {window.location.origin}
+                    {asset.claimUrl}
+                  </p>
+                  <p className="mt-2 text-xs text-purple-100/65">
+                    Attendees use this link and the event word to receive one
+                    balance from this POMP campaign asset.
+                  </p>
+                </div>
               )}
               <div className="mt-3 flex flex-wrap gap-3">
                 {asset.artworkUpload && (
@@ -1249,12 +1268,21 @@ export default function PompPage() {
                   Open on Arweave
                 </a>
                 {asset.claimUrl && (
-                  <Link
-                    href={asset.claimUrl}
-                    className="text-sm text-cyan-300 hover:text-cyan-200"
-                  >
-                    Open claim page
-                  </Link>
+                  <>
+                    <Link
+                      href={asset.claimUrl}
+                      className="text-sm text-cyan-300 hover:text-cyan-200"
+                    >
+                      Open claim page
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => copyClaimLink(asset.claimUrl!)}
+                      className="text-sm text-cyan-300 hover:text-cyan-200"
+                    >
+                      Copy claim link
+                    </button>
+                  </>
                 )}
               </div>
             </div>
