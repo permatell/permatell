@@ -11,6 +11,7 @@ import {
   MAINNET_DEFAULTS,
 } from "@/lib/ao-config";
 import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
+import { getArweaveUrl, uploadToArweave } from "@/lib/arweave";
 
 export const POMP_APP_NAME = "PermaTell";
 export const POMP_TYPE = "POMP";
@@ -19,6 +20,8 @@ export const POAP_CONTRACT_ADDRESS =
 
 const AO_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MAX_TITLE_LENGTH = 150;
+const FREE_BUNDLE_TARGET_BYTES = 100 * 1024;
+const COMPRESSED_ARTWORK_TARGET_BYTES = 96 * 1024;
 
 const poapAbi = [
   {
@@ -127,6 +130,7 @@ export interface PompDropInput {
   title: string;
   description: string;
   artworkId?: string;
+  sourceArtworkUrl?: string;
   eventUrl?: string;
   city?: string;
   country?: string;
@@ -148,11 +152,62 @@ export interface CreatePompAtomicAssetInput {
   creator: string;
 }
 
+export interface CreateNativePompAtomicAssetInput {
+  drop: PompDropInput;
+  creator: string;
+}
+
 export interface PompAtomicAssetResult {
   assetId: string;
+  artworkUpload?: UploadResult;
   bazarUrl: string;
   arweaveUrl: string;
 }
+
+export interface UploadResult {
+  id: string;
+  url: string;
+}
+
+export interface PompClaimedAsset {
+  assetId: string;
+  bazarUrl: string;
+  arweaveUrl: string;
+  artworkUrl?: string;
+  artworkId?: string;
+  title: string;
+  tokenId: string;
+  dropId: string;
+  poapNetwork: string;
+  poapOwner: string;
+  arweaveOwner: string;
+  claimedAt: string;
+  source: "arweave" | "browser";
+}
+
+export interface OwnedPoap {
+  id: string;
+  tokenId: string;
+  dropId: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  eventUrl: string;
+  city: string;
+  country: string;
+  startDate: string;
+  endDate: string;
+  year: string;
+  network: string;
+  ownerAddress: string;
+  raw: unknown;
+}
+
+const POMP_GRAPHQL_ENDPOINTS = [
+  process.env.NEXT_PUBLIC_AO_GQL_URL ||
+    "https://ao-search-gateway.goldsky.com/graphql",
+  "https://arweave.net/graphql",
+] as const;
 
 function normalizeText(value: string | undefined | null): string {
   try {
@@ -212,6 +267,19 @@ function dedupeTags(
     out.push({ name, value });
   }
   return out;
+}
+
+function getTagValue(
+  tags: Array<{ name?: string; value?: string }> | undefined,
+  names: string[]
+): string {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  for (const tag of tags || []) {
+    const name = normalizeText(tag?.name).toLowerCase();
+    const value = normalizeText(tag?.value);
+    if (wanted.has(name) && value) return value;
+  }
+  return "";
 }
 
 function getScheduler(): string {
@@ -289,6 +357,271 @@ function createPompPermawebClient() {
     gateway: "https://arweave.net",
     signer,
   });
+}
+
+function contentTypeExtension(contentType: string): string {
+  if (contentType.includes("png")) return "png";
+  if (contentType.includes("jpeg") || contentType.includes("jpg")) return "jpg";
+  if (contentType.includes("gif")) return "gif";
+  if (contentType.includes("webp")) return "webp";
+  return "webp";
+}
+
+function blobFromCanvas(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality: number
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Unable to compress POAP artwork."));
+      },
+      type,
+      quality
+    );
+  });
+}
+
+async function loadImageBitmap(file: File): Promise<ImageBitmap> {
+  if ("createImageBitmap" in window) {
+    return createImageBitmap(file);
+  }
+
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Unable to read POAP artwork image."));
+      img.src = imageUrl;
+    });
+    return createImageBitmap(image);
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
+async function compressArtworkForBundling(file: File): Promise<File> {
+  if (file.size <= FREE_BUNDLE_TARGET_BYTES) return file;
+  if (!file.type.startsWith("image/") || file.type === "image/svg+xml") {
+    return file;
+  }
+
+  const image = await loadImageBitmap(file);
+  try {
+    const largestSide = Math.max(image.width, image.height);
+    const dimensionCaps = [768, 640, 512, 448, 384, 320];
+    const qualities = [0.86, 0.78, 0.7, 0.62, 0.54, 0.46, 0.38];
+    let best: Blob | null = null;
+
+    for (const cap of dimensionCaps) {
+      const scale = Math.min(1, cap / largestSide);
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Unable to prepare POAP artwork compression.");
+      context.drawImage(image, 0, 0, width, height);
+
+      for (const quality of qualities) {
+        const blob = await blobFromCanvas(canvas, "image/webp", quality);
+        if (!best || blob.size < best.size) best = blob;
+        if (blob.size <= COMPRESSED_ARTWORK_TARGET_BYTES) {
+          return new File(
+            [blob],
+            file.name.replace(/\.[^.]+$/, "") + ".webp",
+            { type: "image/webp" }
+          );
+        }
+      }
+    }
+
+    if (best && best.size < file.size) {
+      return new File([best], file.name.replace(/\.[^.]+$/, "") + ".webp", {
+        type: "image/webp",
+      });
+    }
+    return file;
+  } finally {
+    image.close();
+  }
+}
+
+export async function fetchOwnedPoaps(address: string): Promise<OwnedPoap[]> {
+  if (!isAddress(address)) {
+    throw new Error("Connect or enter a valid EVM wallet address.");
+  }
+
+  const response = await fetch(
+    `/api/poap/collector?address=${encodeURIComponent(getAddress(address))}`,
+    { cache: "no-store" }
+  );
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json?.error || "Unable to fetch POAP collection.");
+  }
+  return Array.isArray(json?.poaps) ? json.poaps : [];
+}
+
+export async function fetchPompAssetsByOwner(
+  ownerAddress: string
+): Promise<PompClaimedAsset[]> {
+  const owner = normalizeText(ownerAddress);
+  if (!owner) return [];
+
+  const query = `
+    query PompAssetsByOwner($owners: [String!], $tags: [TagFilter!]) {
+      transactions(owners: $owners, tags: $tags, first: 50, sort: HEIGHT_DESC) {
+        edges {
+          node {
+            id
+            owner { address }
+            block { timestamp }
+            tags { name value }
+          }
+        }
+      }
+    }
+  `;
+  const variables = {
+    owners: [owner],
+    tags: [
+      { name: "App-Name", values: [POMP_APP_NAME] },
+      { name: "POMP-Asset-Type", values: ["poap-claim", "native-event"] },
+      { name: "POMP-Source", values: ["POAP", "POMP"] },
+    ],
+  };
+
+  let lastError: unknown = null;
+  for (const endpoint of POMP_GRAPHQL_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, variables }),
+      });
+      if (!response.ok) {
+        throw new Error(`POMP GraphQL lookup failed: ${response.status}`);
+      }
+
+      const json = await response.json();
+      const edges = json?.data?.transactions?.edges || [];
+      return edges
+        .map((edge: any): PompClaimedAsset | null => {
+          const node = edge?.node;
+          const assetId = normalizeAoId(node?.id);
+          if (!assetId) return null;
+          const tags = node?.tags || [];
+          const artworkId = normalizeAoId(
+            getTagValue(tags, ["POMP-Artwork", "Artwork"])
+          );
+          const sourceArtworkUrl = getTagValue(tags, ["POAP-Artwork-Source"]);
+          const timestamp = Number(node?.block?.timestamp || 0);
+          return {
+            assetId,
+            bazarUrl: `https://bazar.arweave.net/#/asset/${assetId}`,
+            arweaveUrl: `https://arweave.net/${assetId}`,
+            artworkUrl: artworkId
+              ? `https://arweave.net/${artworkId}`
+              : sourceArtworkUrl || undefined,
+            artworkId: artworkId || undefined,
+            title: getTagValue(tags, ["Title"]) || "POMP",
+            tokenId: getTagValue(tags, ["POAP-Token-Id"]),
+            dropId: getTagValue(tags, ["POAP-Drop-Id"]),
+            poapNetwork: getTagValue(tags, ["POAP-Network"]),
+            poapOwner: getTagValue(tags, ["POAP-Owner"]),
+            arweaveOwner: normalizeText(node?.owner?.address) || owner,
+            claimedAt: timestamp
+              ? new Date(timestamp * 1000).toISOString()
+              : "",
+            source: "arweave",
+          };
+        })
+        .filter(Boolean);
+    } catch (error) {
+      lastError = error;
+      console.warn(`POMP GraphQL lookup via ${endpoint} failed.`, error);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Unable to load POMPs from Arweave.");
+}
+
+export async function mirrorPoapArtworkToArweave(
+  poap: Pick<OwnedPoap, "imageUrl" | "title" | "tokenId" | "dropId">
+): Promise<UploadResult> {
+  if (!poap.imageUrl) {
+    throw new Error("Selected POAP does not include artwork.");
+  }
+
+  const response = await fetch(
+    `/api/poap/artwork?url=${encodeURIComponent(poap.imageUrl)}`,
+    { cache: "no-store" }
+  );
+  if (!response.ok) {
+    const json = await response.json().catch(() => ({}));
+    throw new Error(json?.error || "Unable to download POAP artwork.");
+  }
+
+  const contentType = response.headers.get("content-type") || "image/webp";
+  const bytes = await response.arrayBuffer();
+  const extension = contentTypeExtension(contentType);
+  const file = new File(
+    [bytes],
+    `poap-${poap.dropId || "drop"}-${poap.tokenId || "token"}.${extension}`,
+    { type: contentType }
+  );
+  const uploadFile = await compressArtworkForBundling(file);
+
+  const id = await uploadToArweave(uploadFile, [
+      { name: "Type", value: "POMP-Artwork" },
+      { name: "POMP-Source", value: "POAP" },
+      { name: "POAP-Token-Id", value: poap.tokenId },
+      ...(poap.dropId ? [{ name: "POAP-Drop-Id", value: poap.dropId }] : []),
+      { name: "Title", value: poap.title || "POAP Artwork" },
+      { name: "POMP-Original-Artwork-Bytes", value: String(file.size) },
+      { name: "POMP-Uploaded-Artwork-Bytes", value: String(uploadFile.size) },
+      ...(uploadFile.type !== file.type
+        ? [{ name: "POMP-Artwork-Transcoded", value: "true" }]
+        : []),
+    ]);
+
+  return {
+    id,
+    url: getArweaveUrl(id),
+  };
+}
+
+export async function uploadPompArtworkToArweave(
+  file: File,
+  title: string
+): Promise<UploadResult> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("POMP artwork must be an image file.");
+  }
+
+  const uploadFile = await compressArtworkForBundling(file);
+  const id = await uploadToArweave(uploadFile, [
+    { name: "Type", value: "POMP-Artwork" },
+    { name: "POMP-Source", value: "POMP" },
+    { name: "Title", value: title || "POMP Artwork" },
+    { name: "POMP-Original-Artwork-Bytes", value: String(file.size) },
+    { name: "POMP-Uploaded-Artwork-Bytes", value: String(uploadFile.size) },
+    ...(uploadFile.type !== file.type
+      ? [{ name: "POMP-Artwork-Transcoded", value: "true" }]
+      : []),
+  ]);
+
+  return {
+    id,
+    url: getArweaveUrl(id),
+  };
 }
 
 export async function verifyPoapOwnership(
@@ -372,9 +705,10 @@ export async function createPompAtomicAsset(
       protocol: POMP_TYPE,
       title,
       description,
-      drop: {
+    drop: {
         ...input.drop,
         artworkId: artworkId || input.drop.artworkId || "",
+        sourceArtworkUrl: input.drop.sourceArtworkUrl || "",
       },
       source: {
         protocol: "POAP",
@@ -404,6 +738,7 @@ export async function createPompAtomicAsset(
     poapOwner,
     archiveSnapshot: input.claim.archiveSnapshot || "poaparchive.com",
     artworkId,
+    sourceArtworkUrl: input.drop.sourceArtworkUrl,
     eventUrl: input.drop.eventUrl,
     city: input.drop.city,
     country: input.drop.country,
@@ -421,6 +756,7 @@ export async function createPompAtomicAsset(
     { name: "POMP-Asset-Type", value: "poap-claim" },
     { name: "POMP-Claim-Mode", value: "poap-owner-verified" },
     { name: "POMP-Source", value: "POAP" },
+    { name: "Creator", value: input.creator },
     { name: "POAP-Contract", value: POAP_CONTRACT_ADDRESS },
     { name: "POAP-Network", value: network.key },
     { name: "POAP-Chain-Id", value: String(network.chainId) },
@@ -428,6 +764,9 @@ export async function createPompAtomicAsset(
     ...(dropId ? [{ name: "POAP-Drop-Id", value: dropId }] : []),
     { name: "POAP-Owner", value: poapOwner },
     ...(artworkId ? [{ name: "POMP-Artwork", value: artworkId }] : []),
+    ...(input.drop.sourceArtworkUrl
+      ? [{ name: "POAP-Artwork-Source", value: input.drop.sourceArtworkUrl }]
+      : []),
   ]);
 
   const rawAssetId = await withHyperbeamGlobalFetch(() =>
@@ -454,6 +793,117 @@ export async function createPompAtomicAsset(
   const assetId = normalizeAoId(rawAssetId);
   if (!assetId) {
     throw new Error("POMP mint did not return a valid AO process id.");
+  }
+
+  return {
+    assetId,
+    bazarUrl: `https://bazar.arweave.net/#/asset/${assetId}`,
+    arweaveUrl: `https://arweave.net/${assetId}`,
+  };
+}
+
+export async function createNativePompAtomicAsset(
+  input: CreateNativePompAtomicAssetInput
+): Promise<PompAtomicAssetResult> {
+  const title = shortTitle(input.drop.title);
+  const description =
+    normalizeText(input.drop.description) || `Permanent proof of memory`;
+  const artworkId = normalizeAoId(input.drop.artworkId);
+
+  if (!title) throw new Error("POMP event requires a title.");
+  if (!normalizeText(input.creator)) {
+    throw new Error("POMP event requires a connected Arweave creator address.");
+  }
+
+  const permaweb = createPompPermawebClient();
+  if (!permaweb?.createAtomicAsset) {
+    throw new Error("@permaweb/libs createAtomicAsset is unavailable.");
+  }
+
+  const data = JSON.stringify(
+    {
+      protocol: POMP_TYPE,
+      title,
+      description,
+      drop: {
+        ...input.drop,
+        artworkId: artworkId || input.drop.artworkId || "",
+      },
+      source: {
+        protocol: "POMP",
+        mode: "native-event",
+        creator: input.creator,
+      },
+      createdAt: new Date().toISOString(),
+    },
+    null,
+    2
+  );
+
+  const metadata = sanitizeMetadata({
+    appName: POMP_APP_NAME,
+    assetKind: POMP_TYPE,
+    discoverabilityType: POMP_TYPE,
+    pompAssetType: "native-event",
+    artworkId,
+    eventUrl: input.drop.eventUrl,
+    city: input.drop.city,
+    country: input.drop.country,
+    startDate: input.drop.startDate,
+    endDate: input.drop.endDate,
+    creator: input.creator,
+    createdAt: new Date().toISOString(),
+  });
+
+  const tags = dedupeTags([
+    { name: "App-Name", value: POMP_APP_NAME },
+    { name: "Title", value: title },
+    { name: "Type", value: POMP_TYPE },
+    { name: "POMP-Version", value: "0.1" },
+    { name: "POMP-Asset-Type", value: "native-event" },
+    { name: "POMP-Claim-Mode", value: "creator-minted" },
+    { name: "POMP-Source", value: "POMP" },
+    { name: "Creator", value: input.creator },
+    ...(input.drop.city ? [{ name: "Event-City", value: input.drop.city }] : []),
+    ...(input.drop.country
+      ? [{ name: "Event-Country", value: input.drop.country }]
+      : []),
+    ...(input.drop.startDate
+      ? [{ name: "Event-Start-Date", value: input.drop.startDate }]
+      : []),
+    ...(input.drop.endDate
+      ? [{ name: "Event-End-Date", value: input.drop.endDate }]
+      : []),
+    ...(input.drop.eventUrl
+      ? [{ name: "Event-URL", value: input.drop.eventUrl }]
+      : []),
+    ...(artworkId ? [{ name: "POMP-Artwork", value: artworkId }] : []),
+  ]);
+
+  const rawAssetId = await withHyperbeamGlobalFetch(() =>
+    permaweb.createAtomicAsset(
+      {
+        name: title,
+        description,
+        topics: ["POMP", "PermaTell", "Event"],
+        creator: input.creator,
+        data,
+        contentType: "application/json",
+        assetType: POMP_TYPE,
+        supply: 1,
+        denomination: 1,
+        transferable: true,
+        metadata,
+        tags,
+      },
+      (status: string) => {
+        console.log("[pomp-assets]", status);
+      }
+    )
+  );
+  const assetId = normalizeAoId(rawAssetId);
+  if (!assetId) {
+    throw new Error("POMP event mint did not return a valid AO process id.");
   }
 
   return {

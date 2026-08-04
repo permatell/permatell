@@ -82,4 +82,6 @@ POMP should copy the useful protocol semantics, not the EVM implementation:
 - optional `tokenEvent` lookup for drop id discovery.
 - POMP atomic asset minting with POAP provenance tags.
 
-The initial `/pomp` route is a lab UI. It verifies a POAP token owner and mints a POMP atomic asset through the same AO/HyperBEAM atomic asset path used by story assets.
+The `/pomp` route is a lab UI. It can load a collector's POAPs, verify selected token ownership, mirror artwork to Arweave, and mint a POMP atomic asset through the same AO/HyperBEAM atomic asset path used by story assets.
+
+The server collector route first uses POAP API credentials when available. If credentials are missing, it falls back to public RPC calls against the POAP contract and token metadata.

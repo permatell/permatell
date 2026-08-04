@@ -289,15 +289,24 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   const connectWallet = async () => {
     try {
       setLoading(true);
-      await globalThis.arweaveWallet.connect([
+      const wallet = globalThis.arweaveWallet || window.arweaveWallet;
+      if (!wallet?.connect || !wallet?.getActiveAddress) {
+        throw new Error(
+          "Wander or ArConnect wallet was not detected. Install or enable the extension, then refresh the page."
+        );
+      }
+
+      await wallet.connect([
         "ACCESS_ADDRESS",
         "SIGN_TRANSACTION",
+        "DISPATCH",
       ]);
-      const walletAddress = await globalThis.arweaveWallet.getActiveAddress();
+      const walletAddress = await wallet.getActiveAddress();
       setAddress(walletAddress);
       setWalletType("wander");
     } catch (error) {
       console.error("Failed to connect wallet:", error);
+      throw error;
     } finally {
       setLoading(false);
     }

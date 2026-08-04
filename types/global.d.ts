@@ -12,7 +12,23 @@ interface Window {
     selectedAddress?: string;
     chainId?: string;
   };
-  arweaveWallet: any;
+  arweaveWallet?: {
+    connect: (
+      permissions: string[],
+      appInfo?: { name?: string; logo?: string },
+      gateway?: { host: string; port: number; protocol: "http" | "https" }
+    ) => Promise<void>;
+    disconnect?: () => Promise<void>;
+    getActiveAddress: () => Promise<string>;
+    sign: (transaction: unknown) => Promise<void>;
+    signDataItem?: (dataItem: {
+      data: Uint8Array | string;
+      target?: string;
+      anchor?: string;
+      tags?: { name: string; value: string }[];
+    }) => Promise<Uint8Array>;
+    dispatch?: (transaction: unknown) => Promise<{ id: string; type?: string }>;
+  };
   wanderInstance?: any;
 }
 

@@ -12,6 +12,10 @@ Implemented:
 - optional POAP drop id lookup through `tokenEvent`
 - POMP atomic asset minting through AO/HyperBEAM
 - POMP/POAP provenance tags
+- server-side POAP collection lookup through `/api/poap/collector`
+- no-key fallback that enumerates POAP ownership from public RPCs using `balanceOf`, `tokenDetailsOfOwnerByIndex`, and `tokenURI`
+- POAP artwork proxy route at `/api/poap/artwork`
+- artwork mirroring to Arweave before POMP minting
 
 Needs validation:
 
@@ -19,6 +23,30 @@ Needs validation:
 - Confirm POMP atomic assets index in Bazar and Arweave gateways.
 - Test with a real POAP token on Gnosis and Polygon.
 - Confirm the POAP owner can be different from the Arweave minting wallet.
+- Compare POAP API metadata against on-chain `tokenURI` metadata for several drops.
+
+## POAP Data Strategy
+
+Preferred path:
+
+1. Use `GET https://api.poap.tech/actions/scan/{address}` from a server route.
+2. Keep credentials server-only with `POAP_API_KEY` or `POAP_AUTH_TOKEN`.
+3. Use the returned event details, token id, chain, owner address, and artwork URL to prefill POMP.
+
+Fallback path while waiting for POAP API approval:
+
+1. Query the live POAP ERC-721 contract on supported chains.
+2. Read `balanceOf(owner)`.
+3. Enumerate `tokenDetailsOfOwnerByIndex(owner, index)` to get token id and drop id.
+4. Read `tokenURI(tokenId)`.
+5. Fetch NFT metadata from the token URI.
+6. Use the metadata image/title/description to prefill POMP.
+
+This fallback is slower and depends on public RPC reliability, but it avoids POAP API credentials and is enough for collector-side migration testing.
+
+Metadata completeness depends on the token URI. Title, description, image, token id, and drop id are usually available. Start date, end date, city, country, and event URL are parsed from direct metadata fields, nested event/drop objects, or attributes when present. The official POAP API remains the richer source for event details.
+
+`POST /actions/claim-delivery-v2` is not useful for POMP collection import. It claims a POAP from a delivery id and still requires `x-api-key`; it does not list a collector's existing POAPs.
 
 ## Phase 2: Archive Import
 

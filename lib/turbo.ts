@@ -70,12 +70,13 @@ export async function uploadWithTurbo(
 
   // Upload
   const uploadResult = await turbo.uploadFile({
-    fileStreamFactory: () => new ReadableStream({
-      start(controller) {
-        controller.enqueue(data);
-        controller.close();
-      },
-    }),
+    fileStreamFactory: () =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(data);
+          controller.close();
+        },
+      }),
     fileSizeFactory: () => file.size,
     signal: AbortSignal.timeout(120_000), // 2 minute timeout
     dataItemOpts: {
@@ -112,12 +113,13 @@ export async function uploadDataWithTurbo(
   const bytes = typeof data === "string" ? encoder.encode(data) : data;
 
   const uploadResult = await turbo.uploadFile({
-    fileStreamFactory: () => new ReadableStream({
-      start(controller) {
-        controller.enqueue(bytes);
-        controller.close();
-      },
-    }),
+    fileStreamFactory: () =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
     fileSizeFactory: () => bytes.length,
     signal: AbortSignal.timeout(120_000),
     dataItemOpts: {
