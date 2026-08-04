@@ -99,7 +99,10 @@ export function WalletStatus() {
 
   useEffect(() => {
     const fetchArnsNames = async () => {
-      if (!address) return;
+      if (!address || walletType === "evm") {
+        setAllArns([]);
+        return;
+      }
       
       try {
         const names = await getAllArnsNames(address);
@@ -111,7 +114,7 @@ export function WalletStatus() {
     };
     
     fetchArnsNames();
-  }, [address]);
+  }, [address, walletType]);
 
   // Add debugging for profile and balance
   useEffect(() => {
@@ -124,6 +127,18 @@ export function WalletStatus() {
   const handleDisconnect = () => {
     disconnectWallet();
     setIsOpen(false);
+  };
+
+  const handleConnectWallet = async () => {
+    try {
+      await connectWallet();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to connect Wander or ArConnect."
+      );
+    }
   };
 
   const copyToClipboard = (text: string, type: 'address' | 'profileId') => {
@@ -167,7 +182,7 @@ export function WalletStatus() {
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <Button
-              onClick={connectWallet}
+              onClick={handleConnectWallet}
               variant="default"
               disabled={profileLoading}
               className="flex items-center justify-center py-8 text-xl shadow-[0_4px_14px_0_rgba(0,0,0,0.2)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.3)] transition-all duration-300"
@@ -269,6 +284,8 @@ export function WalletStatus() {
         <span className="hidden md:inline-block">
           {profileLoading ? (
             "Loading..."
+          ) : address && walletType === "evm" ? (
+            truncateAddress(address)
           ) : address ? (
             <div className="flex items-center">
               <ArnsName address={address} showAddress={false} />
