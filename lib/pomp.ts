@@ -12,6 +12,7 @@ import {
 } from "@/lib/ao-config";
 import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
 import { getArweaveUrl, uploadToArweave } from "@/lib/arweave";
+import { POMP_CAMPAIGN_LUA } from "@/lib/pompCampaignLua";
 
 export const POMP_APP_NAME = "PermaTell";
 export const POMP_TYPE = "POMP";
@@ -138,6 +139,16 @@ export interface PompDropInput {
   endDate?: string;
 }
 
+export interface PompCampaignRules {
+  enabled?: boolean;
+  claimMethod: "secret-word";
+  claimWord?: string;
+  claimCodeHash?: string;
+  claimStart?: string;
+  claimEnd?: string;
+  maxClaims: number;
+}
+
 export interface PompPoapClaimInput {
   network: PoapNetworkKey;
   tokenId: string;
@@ -155,6 +166,7 @@ export interface CreatePompAtomicAssetInput {
 export interface CreateNativePompAtomicAssetInput {
   drop: PompDropInput;
   creator: string;
+  campaign?: PompCampaignRules;
 }
 
 export interface PompAtomicAssetResult {
@@ -162,6 +174,14 @@ export interface PompAtomicAssetResult {
   artworkUpload?: UploadResult;
   bazarUrl: string;
   arweaveUrl: string;
+  claimUrl?: string;
+  campaign?: {
+    enabled: boolean;
+    maxClaims: number;
+    claimMethod: string;
+    claimStart: string;
+    claimEnd: string;
+  };
 }
 
 export interface UploadResult {
@@ -292,6 +312,62 @@ function getScheduler(): string {
     );
   }
   return scheduler;
+}
+
+function getWallet(): any {
+  const wallet = globalThis.arweaveWallet;
+  if (!wallet) {
+    throw new Error("Wander/ArConnect wallet is required for POMP actions.");
+  }
+  return wallet;
+}
+
+function createPompAoClient() {
+  const wallet = getWallet();
+  const signer = createDataItemSigner(wallet);
+  const scheduler = getScheduler();
+  const nodeUrl = getHyperbeamWriteUrl();
+  const ao = connect({
+    MODE: "mainnet",
+    URL: nodeUrl,
+    SCHEDULER: scheduler,
+    signer,
+  } as any);
+  return { ao, signer, scheduler, nodeUrl };
+}
+
+function dateToUnixSeconds(value?: string): string {
+  const textValue = normalizeText(value);
+  if (!textValue) return "0";
+  const date = new Date(textValue);
+  if (Number.isNaN(date.getTime())) return "0";
+  return String(Math.floor(date.getTime() / 1000));
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function hashPompClaimWord(
+  assetId: string,
+  claimWord: string
+): Promise<string> {
+  const word = normalizeText(claimWord).toLowerCase();
+  if (!word) throw new Error("Claim word is required.");
+  return sha256Hex(`pomp:${normalizeText(assetId)}:${word}`);
+}
+
+async function resolveCampaignCodeHash(
+  assetId: string,
+  campaign: PompCampaignRules
+): Promise<string> {
+  if (campaign.claimCodeHash) return normalizeText(campaign.claimCodeHash);
+  if (campaign.claimWord) return hashPompClaimWord(assetId, campaign.claimWord);
+  throw new Error("POMP campaign requires a secret claim word.");
 }
 
 function poapChain(network: PoapNetworkConfig): Chain {
@@ -862,6 +938,81 @@ export async function createPompAtomicAsset(
   };
 }
 
+async function installPompCampaignAddon(input: {
+  assetId: string;
+  creator: string;
+  title: string;
+  description: string;
+  drop: PompDropInput;
+  campaign: PompCampaignRules;
+  artworkId: string;
+}) {
+  const { ao, signer } = createPompAoClient();
+  const claimCodeHash = await resolveCampaignCodeHash(
+    input.assetId,
+    input.campaign
+  );
+  const maxClaims = Math.max(1, Math.floor(input.campaign.maxClaims || 1));
+
+  await withHyperbeamGlobalFetch(() =>
+    ao.message({
+      process: input.assetId,
+      signer,
+      tags: [
+        { name: "Data-Protocol", value: "ao" },
+        { name: "Action", value: "Eval" },
+        { name: "Message-Timestamp", value: Date.now().toString() },
+      ],
+      data: POMP_CAMPAIGN_LUA,
+    })
+  );
+
+  await withHyperbeamGlobalFetch(() =>
+    ao.message({
+      process: input.assetId,
+      signer,
+      tags: dedupeTags([
+        { name: "Action", value: "Setup-POMP-Campaign" },
+        { name: "Title", value: input.title },
+        { name: "Description", value: input.description },
+        { name: "Creator", value: input.creator },
+        { name: "POMP-Claim-Method", value: input.campaign.claimMethod },
+        { name: "POMP-Claim-Code-Hash", value: claimCodeHash },
+        { name: "POMP-Claim-Start", value: dateToUnixSeconds(input.campaign.claimStart) },
+        { name: "POMP-Claim-End", value: dateToUnixSeconds(input.campaign.claimEnd) },
+        { name: "POMP-Max-Claims", value: String(maxClaims) },
+        ...(input.artworkId
+          ? [{ name: "POMP-Artwork", value: input.artworkId }]
+          : []),
+        ...(input.drop.city
+          ? [{ name: "Event-City", value: input.drop.city }]
+          : []),
+        ...(input.drop.country
+          ? [{ name: "Event-Country", value: input.drop.country }]
+          : []),
+        ...(input.drop.startDate
+          ? [{ name: "Event-Start-Date", value: input.drop.startDate }]
+          : []),
+        ...(input.drop.endDate
+          ? [{ name: "Event-End-Date", value: input.drop.endDate }]
+          : []),
+        ...(input.drop.eventUrl
+          ? [{ name: "Event-URL", value: input.drop.eventUrl }]
+          : []),
+        { name: "Message-Timestamp", value: Date.now().toString() },
+      ]),
+    })
+  );
+
+  return {
+    enabled: true,
+    maxClaims,
+    claimMethod: input.campaign.claimMethod,
+    claimStart: dateToUnixSeconds(input.campaign.claimStart),
+    claimEnd: dateToUnixSeconds(input.campaign.claimEnd),
+  };
+}
+
 export async function createNativePompAtomicAsset(
   input: CreateNativePompAtomicAssetInput
 ): Promise<PompAtomicAssetResult> {
@@ -874,6 +1025,10 @@ export async function createNativePompAtomicAsset(
   if (!normalizeText(input.creator)) {
     throw new Error("POMP event requires a connected Arweave creator address.");
   }
+  const campaignEnabled = Boolean(input.campaign?.enabled);
+  const maxClaims = campaignEnabled
+    ? Math.max(1, Math.floor(input.campaign?.maxClaims || 1))
+    : 1;
 
   const permaweb = createPompPermawebClient();
   if (!permaweb?.createAtomicAsset) {
@@ -905,6 +1060,9 @@ export async function createNativePompAtomicAsset(
     assetKind: POMP_TYPE,
     discoverabilityType: POMP_TYPE,
     pompAssetType: "native-event",
+    pompCampaignEnabled: campaignEnabled,
+    pompMaxClaims: maxClaims,
+    pompClaimMethod: campaignEnabled ? input.campaign?.claimMethod : undefined,
     artworkId,
     eventUrl: input.drop.eventUrl,
     city: input.drop.city,
@@ -921,9 +1079,21 @@ export async function createNativePompAtomicAsset(
     { name: "Type", value: POMP_TYPE },
     { name: "POMP-Version", value: "0.1" },
     { name: "POMP-Asset-Type", value: "native-event" },
-    { name: "POMP-Claim-Mode", value: "creator-minted" },
+    {
+      name: "POMP-Claim-Mode",
+      value: campaignEnabled ? "secret-word-campaign" : "creator-minted",
+    },
     { name: "POMP-Source", value: "POMP" },
     { name: "Creator", value: input.creator },
+    { name: "POMP-Campaign-Enabled", value: campaignEnabled ? "true" : "false" },
+    { name: "POMP-Max-Claims", value: String(maxClaims) },
+    ...(campaignEnabled && input.campaign
+      ? [
+          { name: "POMP-Claim-Method", value: input.campaign.claimMethod },
+          { name: "POMP-Claim-Start", value: dateToUnixSeconds(input.campaign.claimStart) },
+          { name: "POMP-Claim-End", value: dateToUnixSeconds(input.campaign.claimEnd) },
+        ]
+      : []),
     ...(input.drop.city ? [{ name: "Event-City", value: input.drop.city }] : []),
     ...(input.drop.country
       ? [{ name: "Event-Country", value: input.drop.country }]
@@ -950,7 +1120,7 @@ export async function createNativePompAtomicAsset(
         data,
         contentType: "application/json",
         assetType: POMP_TYPE,
-        supply: 1,
+        supply: maxClaims,
         denomination: 1,
         transferable: true,
         metadata,
@@ -966,7 +1136,58 @@ export async function createNativePompAtomicAsset(
     throw new Error("POMP event mint did not return a valid AO process id.");
   }
 
+  const campaign =
+    campaignEnabled && input.campaign
+      ? await installPompCampaignAddon({
+          assetId,
+          creator: input.creator,
+          title,
+          description,
+          drop: input.drop,
+          campaign: input.campaign,
+          artworkId: artworkId || "",
+        })
+      : undefined;
+
   return {
+    assetId,
+    bazarUrl: `https://bazar.arweave.net/#/asset/${assetId}`,
+    arweaveUrl: `https://arweave.net/${assetId}`,
+    claimUrl: campaign ? `/pomp/claim/${assetId}` : undefined,
+    campaign,
+  };
+}
+
+export async function claimPompCampaign(input: {
+  assetId: string;
+  claimWord: string;
+  claimant: string;
+}): Promise<{ messageId: string; assetId: string; bazarUrl: string; arweaveUrl: string }> {
+  const assetId = normalizeAoId(input.assetId);
+  if (!assetId) throw new Error("A valid POMP asset id is required.");
+  const claimant = normalizeAoId(input.claimant);
+  if (!claimant) throw new Error("Connect a valid Arweave wallet to claim.");
+  const claimCodeHash = await hashPompClaimWord(assetId, input.claimWord);
+  const { ao, signer } = createPompAoClient();
+
+  const messageId = String(
+    await withHyperbeamGlobalFetch(() =>
+      ao.message({
+        process: assetId,
+        signer,
+        tags: [
+          { name: "Action", value: "Claim" },
+          { name: "Wallet-Address", value: claimant },
+          { name: "Recipient", value: claimant },
+          { name: "POMP-Claim-Code-Hash", value: claimCodeHash },
+          { name: "Message-Timestamp", value: Date.now().toString() },
+        ],
+      })
+    )
+  );
+
+  return {
+    messageId,
     assetId,
     bazarUrl: `https://bazar.arweave.net/#/asset/${assetId}`,
     arweaveUrl: `https://arweave.net/${assetId}`,

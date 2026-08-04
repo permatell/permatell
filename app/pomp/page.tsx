@@ -159,6 +159,11 @@ export default function PompPage() {
   const [country, setCountry] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [campaignEnabled, setCampaignEnabled] = useState(true);
+  const [claimWord, setClaimWord] = useState("");
+  const [maxClaims, setMaxClaims] = useState("100");
+  const [claimStart, setClaimStart] = useState("");
+  const [claimEnd, setClaimEnd] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [mirroringArtwork, setMirroringArtwork] = useState(false);
   const [minting, setMinting] = useState(false);
@@ -184,9 +189,14 @@ export default function PompPage() {
     if (!arweaveMintAddress) return "Connect Wander or ArConnect";
     if (!title.trim()) return "Confirm a POMP title";
     if (!isPoapMode && !startDate.trim()) return "Add an event start date";
+    if (!isPoapMode && campaignEnabled && !claimWord.trim()) {
+      return "Add a claim word";
+    }
     return "";
   }, [
     arweaveMintAddress,
+    campaignEnabled,
+    claimWord,
     isPoapMode,
     selectedPoap,
     startDate,
@@ -199,7 +209,9 @@ export default function PompPage() {
     (!isPoapMode || Boolean(verification?.owns)) &&
     Boolean(title.trim()) &&
     (!isPoapMode || Boolean(tokenId.trim())) &&
-    (isPoapMode || Boolean(startDate.trim()));
+    (isPoapMode ||
+      (Boolean(startDate.trim()) &&
+        (!campaignEnabled || Boolean(claimWord.trim()))));
   const poapDetailsLocked = isPoapMode && Boolean(selectedPoap);
 
   const loadClaimedPomps = async () => {
@@ -309,6 +321,11 @@ export default function PompPage() {
     setCountry("");
     setStartDate("");
     setEndDate("");
+    setCampaignEnabled(true);
+    setClaimWord("");
+    setMaxClaims("100");
+    setClaimStart("");
+    setClaimEnd("");
   };
 
   const handleArtworkFileChange = (file: File | null) => {
@@ -436,6 +453,16 @@ export default function PompPage() {
                 startDate,
                 endDate,
               },
+              campaign: campaignEnabled
+                ? {
+                    enabled: true,
+                    claimMethod: "secret-word",
+                    claimWord,
+                    maxClaims: Number(maxClaims) || 1,
+                    claimStart: claimStart || startDate,
+                    claimEnd: claimEnd || endDate,
+                  }
+                : undefined,
             });
       setAsset(
         finalArtworkId
@@ -475,7 +502,11 @@ export default function PompPage() {
       writeClaimedPomps(nextClaims);
       setClaimedPomps(nextClaims);
       toast.success(
-        isPoapMode ? "POMP atomic asset minted." : "POMP event created."
+        isPoapMode
+          ? "POMP atomic asset minted."
+          : campaignEnabled
+          ? "POMP event campaign created."
+          : "POMP event created."
       );
     } catch (error: any) {
       setMirroringArtwork(false);
@@ -990,6 +1021,60 @@ export default function PompPage() {
               disabled={poapDetailsLocked}
               className="bg-black/40 border-gray-800"
             />
+            {!isPoapMode && (
+              <div className="rounded-lg border border-purple-400/25 bg-purple-400/10 p-4">
+                <label className="flex items-center gap-3 text-sm font-medium text-gray-100">
+                  <input
+                    type="checkbox"
+                    checked={campaignEnabled}
+                    onChange={(event) => setCampaignEnabled(event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-700 bg-black"
+                  />
+                  Enable audience claims
+                </label>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Input
+                    label="Secret claim word"
+                    type="password"
+                    value={claimWord}
+                    onChange={(event) => setClaimWord(event.target.value)}
+                    placeholder="Shared at the event"
+                    disabled={!campaignEnabled}
+                    className="bg-black/40 border-gray-800"
+                  />
+                  <Input
+                    label="Max claims"
+                    type="number"
+                    min="1"
+                    value={maxClaims}
+                    onChange={(event) => setMaxClaims(event.target.value)}
+                    disabled={!campaignEnabled}
+                    className="bg-black/40 border-gray-800"
+                  />
+                  <Input
+                    label="Claim opens"
+                    type="datetime-local"
+                    value={claimStart}
+                    onChange={(event) => setClaimStart(event.target.value)}
+                    disabled={!campaignEnabled}
+                    className="bg-black/40 border-gray-800"
+                  />
+                  <Input
+                    label="Claim closes"
+                    type="datetime-local"
+                    value={claimEnd}
+                    onChange={(event) => setClaimEnd(event.target.value)}
+                    disabled={!campaignEnabled}
+                    className="bg-black/40 border-gray-800"
+                  />
+                </div>
+                <p className="mt-3 text-xs text-purple-100/70">
+                  The claim word is hashed before it is stored in AO. Attendees
+                  claim from the event asset process, which tracks one claim per
+                  wallet in Lua state.
+                </p>
+              </div>
+            )}
           </div>
 
           {isPoapMode && (
@@ -1032,12 +1117,30 @@ export default function PompPage() {
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-gray-300">Event details</span>
-                <span className={title && startDate ? "text-emerald-300" : "text-gray-500"}>
-                  {title && startDate ? "Ready" : "Required"}
-                </span>
-              </div>
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-gray-300">Event details</span>
+                  <span className={title && startDate ? "text-emerald-300" : "text-gray-500"}>
+                    {title && startDate ? "Ready" : "Required"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-gray-300">Audience claims</span>
+                  <span
+                    className={
+                      !campaignEnabled || claimWord
+                        ? "text-emerald-300"
+                        : "text-gray-500"
+                    }
+                  >
+                    {campaignEnabled
+                      ? claimWord
+                        ? `${maxClaims || "1"} max`
+                        : "Claim word required"
+                      : "Disabled"}
+                  </span>
+                </div>
+              </>
             )}
             <div className="flex items-center justify-between gap-3">
               <span className="text-gray-300">Artwork on Arweave</span>
@@ -1112,6 +1215,12 @@ export default function PompPage() {
                   Artwork: {asset.artworkUpload.id}
                 </p>
               )}
+              {asset.claimUrl && (
+                <p className="mt-2 break-all text-xs text-purple-100/80">
+                  Claim link: {window.location.origin}
+                  {asset.claimUrl}
+                </p>
+              )}
               <div className="mt-3 flex flex-wrap gap-3">
                 {asset.artworkUpload && (
                   <a
@@ -1139,6 +1248,14 @@ export default function PompPage() {
                 >
                   Open on Arweave
                 </a>
+                {asset.claimUrl && (
+                  <Link
+                    href={asset.claimUrl}
+                    className="text-sm text-cyan-300 hover:text-cyan-200"
+                  >
+                    Open claim page
+                  </Link>
+                )}
               </div>
             </div>
           )}
