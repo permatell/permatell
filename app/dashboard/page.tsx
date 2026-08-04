@@ -32,6 +32,67 @@ import {
   type PompClaimedAsset,
 } from "@/lib/pomp";
 
+function PompDiscoveryCardBody({
+  pomp,
+  claimed,
+  remaining,
+}: {
+  pomp: PompClaimedAsset;
+  claimed?: number;
+  remaining?: number;
+}) {
+  return (
+    <>
+      <div className="relative h-36 bg-gray-950">
+        {pomp.artworkUrl ? (
+          <img
+            src={pomp.artworkUrl}
+            alt={`Artwork for ${pomp.title}`}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-gray-500">
+            POMP
+          </div>
+        )}
+      </div>
+      <CardHeader className="pb-1 pt-3">
+        <CardTitle className="truncate bg-gradient-to-r from-white to-purple-200 bg-clip-text text-base text-transparent">
+          {pomp.title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pb-0 pt-1">
+        <div className="space-y-1">
+          {pomp.tokenId && (
+            <p className="text-xs text-gray-300/90">
+              POAP token: <b className="text-purple-200/90">{pomp.tokenId}</b>
+            </p>
+          )}
+          <p className="text-xs text-gray-300/90">
+            Creator:{" "}
+            <b className="text-purple-200/90">
+              {pomp.arweaveOwner
+                ? `${pomp.arweaveOwner.slice(0, 6)}...${pomp.arweaveOwner.slice(-4)}`
+                : "Unknown"}
+            </b>
+          </p>
+          {pomp.claimedAt && (
+            <p className="text-xs text-gray-500">
+              {new Date(pomp.claimedAt).toLocaleDateString()}
+            </p>
+          )}
+          {pomp.assetType === "native-event" && (
+            <p className="text-xs text-cyan-100/80">
+              Claims: <b>{claimed ?? "indexing"}</b>
+              {typeof remaining === "number" && ` · Remaining: ${remaining}`}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </>
+  );
+}
+
 const Dashboard = () => {
   const { stories, getStories, loading } = useStoriesProcess();
   const { address } = useWallet();
@@ -396,56 +457,28 @@ const Dashboard = () => {
                       ? "Native POMP"
                       : "POAP POMP"}
                   </div>
-                  <div className="relative h-36 bg-gray-950">
-                    {pomp.artworkUrl ? (
-                      <img
-                        src={pomp.artworkUrl}
-                        alt={`Artwork for ${pomp.title}`}
-                        className="absolute inset-0 w-full h-full object-cover"
+                  {pomp.assetType === "native-event" ? (
+                    <Link
+                      href={`/pomp/claim/${pomp.assetId}`}
+                      className="block focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                    >
+                      <PompDiscoveryCardBody
+                        pomp={pomp}
+                        claimed={pompCampaignStats[pomp.assetId]?.claimed}
+                        remaining={pompCampaignStats[pomp.assetId]?.remaining}
                       />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                        POMP
-                      </div>
-                    )}
-                  </div>
-                  <CardHeader className="pb-1 pt-3">
-                    <CardTitle className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent truncate text-base">
-                      {pomp.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex flex-col flex-grow pt-1">
-                    <div className="space-y-1">
-                      {pomp.tokenId && (
-                        <p className="text-xs text-gray-300/90">
-                          POAP token:{" "}
-                          <b className="text-purple-200/90">{pomp.tokenId}</b>
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-300/90">
-                        Creator:{" "}
-                        <b className="text-purple-200/90">
-                          {pomp.arweaveOwner
-                            ? `${pomp.arweaveOwner.slice(0, 6)}...${pomp.arweaveOwner.slice(-4)}`
-                            : "Unknown"}
-                        </b>
-                      </p>
-                      {pomp.claimedAt && (
-                        <p className="text-xs text-gray-500">
-                          {new Date(pomp.claimedAt).toLocaleDateString()}
-                        </p>
-                      )}
-                      {pomp.assetType === "native-event" && (
-                        <p className="text-xs text-cyan-100/80">
-                          Claims:{" "}
-                          <b>
-                            {pompCampaignStats[pomp.assetId]?.claimed ?? "indexing"}
-                          </b>
-                          {pompCampaignStats[pomp.assetId] &&
-                            ` · Remaining: ${pompCampaignStats[pomp.assetId].remaining}`}
-                        </p>
-                      )}
-                    </div>
+                    </Link>
+                  ) : (
+                    <a
+                      href={pomp.arweaveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                    >
+                      <PompDiscoveryCardBody pomp={pomp} />
+                    </a>
+                  )}
+                  <CardContent className="flex flex-grow flex-col pt-1">
                     <div
                       className={`mt-auto grid gap-2 ${
                         pomp.assetType === "native-event"
