@@ -61,6 +61,19 @@ export interface PompCampaignInfo {
   source: "dryrun" | "gateway";
 }
 
+export interface PompAssetDetail extends PompAsset {
+  tags: Record<string, string>;
+  metadata: Record<string, any>;
+  description: string;
+  eventUrl: string;
+  city: string;
+  country: string;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  campaign: PompCampaignInfo | null;
+}
+
 export function normalizeAoId(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -124,6 +137,18 @@ export function pompAssetFromGraphqlEdge(
   };
 }
 
+export function tagsToRecord(
+  tags: Array<{ name?: string; value?: string }> | undefined
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const tag of tags || []) {
+    const name = normalizeText(tag?.name);
+    const value = normalizeText(tag?.value);
+    if (name && value) out[name] = value;
+  }
+  return out;
+}
+
 export function parseCampaignPayload(value: any): Omit<PompCampaignInfo, "source"> | null {
   const asset = typeof value?.asset === "string" ? safeJson(value.asset) : value?.asset;
   const source = asset || value;
@@ -155,6 +180,137 @@ export function safeJson(value: string): any {
   } catch {
     return null;
   }
+}
+
+async function fetchJsonFromGateways(id: string): Promise<Record<string, any>> {
+  for (const gateway of CAMPAIGN_GATEWAYS) {
+    try {
+      const response = await fetch(`${gateway}/${id}`, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) continue;
+      const parsed = safeJson(await response.text());
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      // Try next gateway.
+    }
+  }
+  return {};
+}
+
+export async function fetchPompAssetDetail(
+  assetId: string
+): Promise<PompAssetDetail | null> {
+  const id = normalizeAoId(assetId);
+  if (!id) return null;
+
+  const query = `
+    query PompAsset($ids: [ID!]!) {
+      transactions(ids: $ids, first: 1) {
+        edges {
+          node {
+            id
+            owner { address }
+            block { timestamp }
+            tags { name value }
+          }
+        }
+      }
+    }
+  `;
+
+  let asset: PompAsset | null = null;
+  let tags: Record<string, string> = {};
+  for (const endpoint of POMP_GRAPHQL_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, variables: { ids: [id] } }),
+        cache: "no-store",
+      });
+      if (!response.ok) continue;
+      const json = await response.json();
+      const edge = json?.data?.transactions?.edges?.[0];
+      const parsed = pompAssetFromGraphqlEdge(edge);
+      if (!parsed) continue;
+      asset = parsed;
+      tags = tagsToRecord(edge?.node?.tags || []);
+      break;
+    } catch {
+      // Try next endpoint.
+    }
+  }
+
+  const metadata = await fetchJsonFromGateways(id);
+  const drop = metadata?.drop || {};
+  const source = metadata?.source || {};
+  const campaign = await fetchPompCampaignInfo(id);
+
+  const assetType =
+    asset?.assetType ||
+    tags["POMP-Asset-Type"] ||
+    (source?.mode === "native-event" ? "native-event" : "");
+  const sourceProtocol =
+    asset?.sourceProtocol || tags["POMP-Source"] || source?.protocol || "";
+  const artworkId =
+    asset?.artworkId ||
+    normalizeAoId(drop?.artworkId || tags["POMP-Artwork"] || tags.Artwork) ||
+    undefined;
+
+  const baseAsset: PompAsset =
+    asset || {
+      assetId: id,
+      bazarUrl: `https://bazar.arweave.net/#/asset/${id}`,
+      arweaveUrl: `https://arweave.net/${id}`,
+      title: tags.Title || metadata?.title || campaign?.config?.Name || "POMP",
+      tokenId: tags["POAP-Token-Id"] || "",
+      dropId: tags["POAP-Drop-Id"] || "",
+      poapNetwork: tags["POAP-Network"] || "",
+      poapOwner: tags["POAP-Owner"] || "",
+      arweaveOwner: tags.Creator || source?.creator || "",
+      claimedAt: metadata?.createdAt || "",
+      source: "arweave",
+    };
+
+  return {
+    ...baseAsset,
+    title:
+      baseAsset.title ||
+      metadata?.title ||
+      campaign?.config?.Name ||
+      tags.Title ||
+      "POMP",
+    artworkId,
+    artworkUrl:
+      artworkId
+        ? `https://arweave.net/${artworkId}`
+        : baseAsset.artworkUrl || tags["POAP-Artwork-Source"] || undefined,
+    assetType,
+    sourceProtocol,
+    tags,
+    metadata,
+    description:
+      metadata?.description ||
+      drop?.description ||
+      campaign?.config?.Description ||
+      tags.Description ||
+      "",
+    eventUrl: drop?.eventUrl || campaign?.config?.EventUrl || tags["Event-URL"] || "",
+    city: drop?.city || campaign?.config?.City || tags["Event-City"] || "",
+    country:
+      drop?.country || campaign?.config?.Country || tags["Event-Country"] || "",
+    startDate:
+      drop?.startDate ||
+      campaign?.config?.StartDate ||
+      tags["Event-Start-Date"] ||
+      "",
+    endDate:
+      drop?.endDate || campaign?.config?.EndDate || tags["Event-End-Date"] || "",
+    createdAt: metadata?.createdAt || baseAsset.claimedAt || "",
+    campaign,
+  };
 }
 
 function resultTagsToRecord(tags: any): Record<string, string> {

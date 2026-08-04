@@ -239,6 +239,19 @@ export interface PompClaimedAsset {
   source: "arweave" | "browser";
 }
 
+export interface PompAssetDetail extends PompClaimedAsset {
+  tags: Record<string, string>;
+  metadata: Record<string, any>;
+  description: string;
+  eventUrl: string;
+  city: string;
+  country: string;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  campaign: PompCampaignInfo | null;
+}
+
 export interface OwnedPoap {
   id: string;
   tokenId: string;
@@ -747,6 +760,21 @@ export async function fetchPompCampaignInfo(
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(json?.error || "Unable to load POMP campaign details.");
+  }
+  return json;
+}
+
+export async function fetchPompAssetDetail(
+  assetId: string
+): Promise<PompAssetDetail> {
+  const id = normalizeAoId(assetId);
+  if (!id) throw new Error("A valid POMP asset id is required.");
+  const response = await fetch(`/api/pomp/asset/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json?.error || "Unable to load POMP asset details.");
   }
   return json;
 }

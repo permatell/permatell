@@ -469,14 +469,12 @@ const Dashboard = () => {
                       />
                     </Link>
                   ) : (
-                    <a
-                      href={pomp.arweaveUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <Link
+                      href={`/pomp/${pomp.assetId}`}
                       className="block focus:outline-none focus:ring-2 focus:ring-cyan-400"
                     >
                       <PompDiscoveryCardBody pomp={pomp} />
-                    </a>
+                    </Link>
                   )}
                   <CardContent className="flex flex-grow flex-col pt-1">
                     <div

@@ -8,11 +8,14 @@ import { Award, ExternalLink, KeyRound, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CardContainer } from "@/components/ui/card-container";
 import { Input } from "@/components/ui/input";
+import { PompAssetDetails } from "@/components/pomp/pomp-asset-details";
 import { useWallet } from "@/contexts/WalletContext";
 import {
   claimPompCampaign,
+  fetchPompAssetDetail,
   fetchPompCampaignInfo,
   type PompCampaignClaimResult,
+  type PompAssetDetail,
   type PompCampaignInfo,
 } from "@/lib/pomp";
 
@@ -24,6 +27,7 @@ export default function PompClaimPage() {
   const [claiming, setClaiming] = useState(false);
   const [claimResult, setClaimResult] =
     useState<PompCampaignClaimResult | null>(null);
+  const [asset, setAsset] = useState<PompAssetDetail | null>(null);
   const [campaign, setCampaign] = useState<PompCampaignInfo | null>(null);
   const [loadingCampaign, setLoadingCampaign] = useState(false);
 
@@ -34,7 +38,18 @@ export default function PompClaimPage() {
     if (!assetId) return;
     setLoadingCampaign(true);
     try {
-      setCampaign(await fetchPompCampaignInfo(assetId));
+      const [assetDetail, campaignDetail] = await Promise.allSettled([
+        fetchPompAssetDetail(assetId),
+        fetchPompCampaignInfo(assetId),
+      ]);
+      if (assetDetail.status === "fulfilled") {
+        setAsset(assetDetail.value);
+      }
+      if (campaignDetail.status === "fulfilled") {
+        setCampaign(campaignDetail.value);
+      } else if (assetDetail.status === "fulfilled") {
+        setCampaign(assetDetail.value.campaign);
+      }
     } catch (error) {
       console.warn("Unable to load POMP campaign details:", error);
       setCampaign(null);
@@ -92,6 +107,12 @@ export default function PompClaimPage() {
           asset.
         </p>
       </div>
+
+      {asset && (
+        <div className="mb-6">
+          <PompAssetDetails asset={{ ...asset, campaign: campaign || asset.campaign }} />
+        </div>
+      )}
 
       <CardContainer className="border border-gray-800 bg-black/45 p-5 shadow-lg">
         <div className="mb-5 rounded-lg border border-gray-800 bg-black/30 p-3">

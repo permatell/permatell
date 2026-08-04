@@ -475,7 +475,9 @@ export default function PompPage() {
   }, [createdCampaignsForWallet]);
 
   const isCampaignPomp = (claim: PompClaimedAsset) =>
-    claim.assetType === "native-event" || claim.sourceProtocol === "POMP";
+    claim.assetType === "native-event" ||
+    claim.sourceProtocol === "POMP" ||
+    (!claim.poapNetwork && !claim.tokenId && !claim.dropId);
 
   const rememberCreatedCampaign = (
     result: PompAtomicAssetResult,
@@ -660,6 +662,8 @@ export default function PompPage() {
         poapOwner: isPoapMode && verification ? verification.expectedOwner : "",
         arweaveOwner: arweaveMintAddress,
         claimedAt: new Date().toISOString(),
+        assetType: isPoapMode ? "poap-claim" : "native-event",
+        sourceProtocol: isPoapMode ? "POAP" : "POMP",
         source: "browser",
       };
       const nextClaims = [
@@ -960,51 +964,65 @@ export default function PompPage() {
 
             {claimedPomps.length > 0 ? (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {claimedPomps.map((claim) => (
-                  <div
-                    key={claim.assetId}
-                    className="overflow-hidden rounded-lg border border-purple-400/25 bg-purple-400/10"
-                  >
-                    <div className="aspect-square bg-gray-950">
-                      {claim.artworkUrl ? (
-                        <img
-                          src={claim.artworkUrl}
-                          alt={claim.title}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                          No artwork
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-2 p-3">
-                      <p className="line-clamp-2 text-sm font-medium text-white">
-                        {claim.title}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        Token {claim.tokenId}
-                        {claim.dropId ? ` · Drop ${claim.dropId}` : ""}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {claim.source === "arweave"
-                          ? "Loaded from Arweave/AO"
-                          : "Browser cache, indexing pending"}
-                      </p>
-                      <p className="break-all font-mono text-[11px] text-purple-100/80">
-                        {isCampaignPomp(claim) ? (
-                          <Link
-                            href={`/pomp/claim/${claim.assetId}`}
-                            className="text-cyan-300 hover:text-cyan-200"
-                          >
-                            {claim.assetId}
-                          </Link>
+                {claimedPomps.map((claim) => {
+                  const campaign = isCampaignPomp(claim);
+                  const cardBody = (
+                    <>
+                      <div className="aspect-square bg-gray-950">
+                        {claim.artworkUrl ? (
+                          <img
+                            src={claim.artworkUrl}
+                            alt={claim.title}
+                            className="h-full w-full object-cover"
+                          />
                         ) : (
-                          claim.assetId
+                          <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                            No artwork
+                          </div>
                         )}
-                      </p>
-                      <div className="flex flex-wrap gap-3 pt-1 text-sm">
-                        {isCampaignPomp(claim) && (
+                      </div>
+                      <div className="space-y-2 p-3">
+                        <p className="line-clamp-2 text-sm font-medium text-white">
+                          {claim.title}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Token {claim.tokenId}
+                          {claim.dropId ? ` · Drop ${claim.dropId}` : ""}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {claim.source === "arweave"
+                            ? "Loaded from Arweave/AO"
+                            : "Browser cache, indexing pending"}
+                        </p>
+                        <p className="break-all font-mono text-[11px] text-cyan-300">
+                          {claim.assetId}
+                        </p>
+                      </div>
+                    </>
+                  );
+
+                  return (
+                    <div
+                      key={claim.assetId}
+                      className="overflow-hidden rounded-lg border border-purple-400/25 bg-purple-400/10"
+                    >
+                      {campaign ? (
+                        <Link
+                          href={`/pomp/claim/${claim.assetId}`}
+                          className="block transition hover:bg-purple-400/5 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                        >
+                          {cardBody}
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/pomp/${claim.assetId}`}
+                          className="block transition hover:bg-purple-400/5 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                        >
+                          {cardBody}
+                        </Link>
+                      )}
+                      <div className="flex flex-wrap gap-3 px-3 pb-3 pt-1 text-sm">
+                        {campaign && (
                           <Link
                             href={`/pomp/claim/${claim.assetId}`}
                             className="text-cyan-300 hover:text-cyan-200"
@@ -1040,8 +1058,8 @@ export default function PompPage() {
                         )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-lg border border-gray-800 bg-black/30 p-6 text-center text-gray-400">
