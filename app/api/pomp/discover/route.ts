@@ -15,6 +15,9 @@ export async function GET(request: NextRequest) {
     100
   );
   const owner = request.nextUrl.searchParams.get("owner")?.trim() || "";
+  const creator = request.nextUrl.searchParams.get("creator")?.trim() || "";
+  const assetType =
+    request.nextUrl.searchParams.get("assetType")?.trim() || "";
 
   const query = `
     query DiscoverPomps($owners: [String!], $tags: [TagFilter!], $first: Int!) {
@@ -36,8 +39,12 @@ export async function GET(request: NextRequest) {
     tags: [
       { name: "App-Name", values: [POMP_APP_NAME] },
       { name: "Type", values: [POMP_TYPE] },
-      { name: "POMP-Asset-Type", values: ["poap-claim", "native-event"] },
+      {
+        name: "POMP-Asset-Type",
+        values: assetType ? [assetType] : ["poap-claim", "native-event"],
+      },
       { name: "POMP-Source", values: ["POAP", "POMP"] },
+      ...(creator ? [{ name: "Creator", values: [creator] }] : []),
     ],
   };
 

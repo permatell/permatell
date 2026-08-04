@@ -16,6 +16,29 @@ function isPushRequest(url: string, method: string): boolean {
   }
 }
 
+function isArweaveGraphqlRequest(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.href);
+    return parsed.hostname === "arweave.net" && parsed.pathname === "/graphql";
+  } catch {
+    return false;
+  }
+}
+
+async function proxyArweaveGraphql(
+  fetchImpl: typeof fetch,
+  baseRequest: Request
+): Promise<Response> {
+  const headers = new Headers(baseRequest.headers);
+  headers.set("Content-Type", headers.get("Content-Type") || "application/json");
+  return fetchImpl("/api/arweave/graphql", {
+    method: baseRequest.method,
+    headers,
+    body: await baseRequest.clone().text(),
+    cache: "no-store",
+  });
+}
+
 function withQueryParam(url: string, key: string, value: string): string {
   const parsed = new URL(url, window.location.href);
   parsed.searchParams.set(key, value);
@@ -132,6 +155,10 @@ export function createHyperbeamFetch(fetchImpl: typeof fetch = fetch): typeof fe
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const baseRequest = new Request(input, init);
     const url = getUrl(baseRequest);
+
+    if (isArweaveGraphqlRequest(url)) {
+      return proxyArweaveGraphql(fetchImpl, baseRequest);
+    }
 
     if (!isPushRequest(url, baseRequest.method)) {
       const res = await fetchImpl(baseRequest);

@@ -15,6 +15,7 @@ import {
   createPompAtomicAsset,
   fetchOwnedPoaps,
   fetchPompCampaignInfo,
+  fetchPompCampaignsByCreator,
   fetchPompAssetsByOwner,
   mirrorPoapArtworkToArweave,
   uploadPompArtworkToArweave,
@@ -318,7 +319,9 @@ export default function PompPage() {
 
     setLoadingCreatedCampaigns(true);
     try {
-      const networkAssets = await fetchPompAssetsByOwner(arweaveMintAddress);
+      const networkAssets = await fetchPompCampaignsByCreator(
+        arweaveMintAddress
+      );
       const networkCampaigns = networkAssets
         .filter((claim) => isCampaignPomp(claim))
         .map(

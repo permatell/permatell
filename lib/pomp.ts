@@ -6,7 +6,6 @@ import Permaweb from "@permaweb/libs";
 import { createPublicClient, getAddress, http, isAddress } from "viem";
 import type { Chain } from "viem";
 import {
-  getAOConfig,
   getHyperbeamWriteUrl,
   MAINNET_DEFAULTS,
 } from "@/lib/ao-config";
@@ -521,40 +520,17 @@ function createPompPermawebClient() {
   }
 
   const signer = createDataItemSigner(wallet);
-  const config = getAOConfig();
   const arweave = Arweave.init({
     host: "arweave.net",
     port: 443,
     protocol: "https",
   });
 
-  if (config.mode === "mainnet") {
-    const scheduler = getScheduler();
-    const ao = connect({
-      MODE: "mainnet",
-      URL: getHyperbeamWriteUrl(),
-      SCHEDULER: scheduler,
-      signer,
-    } as any);
-
-    return Permaweb.init({
-      ao,
-      arweave,
-      gateway: "https://arweave.net",
-      node: {
-        url: getHyperbeamWriteUrl(),
-        scheduler,
-        authority: MAINNET_DEFAULTS.authority,
-      },
-      signer,
-    });
-  }
-
+  const scheduler = getScheduler();
   const ao = connect({
-    MODE: "legacy",
-    MU_URL: config.mu_url,
-    CU_URL: config.cu_url,
-    GATEWAY_URL: config.gateway,
+    MODE: "mainnet",
+    URL: getHyperbeamWriteUrl(),
+    SCHEDULER: scheduler,
     signer,
   } as any);
 
@@ -562,6 +538,11 @@ function createPompPermawebClient() {
     ao,
     arweave,
     gateway: "https://arweave.net",
+    node: {
+      url: getHyperbeamWriteUrl(),
+      scheduler,
+      authority: MAINNET_DEFAULTS.authority,
+    },
     signer,
   });
 }
@@ -687,6 +668,25 @@ export async function fetchPompAssetsByOwner(
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(json?.error || "Unable to load POMPs from Arweave.");
+  }
+  return Array.isArray(json?.pomps) ? json.pomps : [];
+}
+
+export async function fetchPompCampaignsByCreator(
+  creatorAddress: string
+): Promise<PompClaimedAsset[]> {
+  const creator = normalizeText(creatorAddress);
+  if (!creator) return [];
+
+  const response = await fetch(
+    `/api/pomp/discover?creator=${encodeURIComponent(
+      creator
+    )}&assetType=native-event&limit=50`,
+    { cache: "no-store" }
+  );
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json?.error || "Unable to load created POMP campaigns.");
   }
   return Array.isArray(json?.pomps) ? json.pomps : [];
 }
