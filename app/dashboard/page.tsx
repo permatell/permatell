@@ -350,7 +350,20 @@ const Dashboard = () => {
                         </p>
                       )}
                     </div>
-                    <div className="mt-auto grid grid-cols-2 gap-2">
+                    <div
+                      className={`mt-auto grid gap-2 ${
+                        pomp.assetType === "native-event"
+                          ? "grid-cols-3"
+                          : "grid-cols-2"
+                      }`}
+                    >
+                      {pomp.assetType === "native-event" && (
+                        <Link href={`/pomp/claim/${pomp.assetId}`}>
+                          <Button className="w-full border border-cyan-500/40 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15 text-sm h-8">
+                            Claim
+                          </Button>
+                        </Link>
+                      )}
                       <a
                         href={pomp.bazarUrl}
                         target="_blank"
