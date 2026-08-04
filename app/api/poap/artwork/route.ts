@@ -1,8 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readPoapArchiveArtwork } from "../_archive";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  const dropId = request.nextUrl.searchParams.get("dropId") || "";
+  if (dropId) {
+    if (!/^\d+$/.test(dropId)) {
+      return NextResponse.json(
+        { error: "dropId must be numeric." },
+        { status: 400 }
+      );
+    }
+
+    const bytes = await readPoapArchiveArtwork(dropId);
+    if (!bytes) {
+      return NextResponse.json(
+        { error: "Archived POAP artwork was not found." },
+        { status: 404 }
+      );
+    }
+
+    return new NextResponse(bytes, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/webp",
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
+    });
+  }
+
   const rawUrl = request.nextUrl.searchParams.get("url") || "";
   let url: URL;
   try {

@@ -182,6 +182,8 @@ export interface PompClaimedAsset {
   poapOwner: string;
   arweaveOwner: string;
   claimedAt: string;
+  assetType?: "poap-claim" | "native-event" | string;
+  sourceProtocol?: "POAP" | "POMP" | string;
   source: "arweave" | "browser";
 }
 
@@ -511,36 +513,7 @@ export async function fetchPompAssetsByOwner(
       const json = await response.json();
       const edges = json?.data?.transactions?.edges || [];
       return edges
-        .map((edge: any): PompClaimedAsset | null => {
-          const node = edge?.node;
-          const assetId = normalizeAoId(node?.id);
-          if (!assetId) return null;
-          const tags = node?.tags || [];
-          const artworkId = normalizeAoId(
-            getTagValue(tags, ["POMP-Artwork", "Artwork"])
-          );
-          const sourceArtworkUrl = getTagValue(tags, ["POAP-Artwork-Source"]);
-          const timestamp = Number(node?.block?.timestamp || 0);
-          return {
-            assetId,
-            bazarUrl: `https://bazar.arweave.net/#/asset/${assetId}`,
-            arweaveUrl: `https://arweave.net/${assetId}`,
-            artworkUrl: artworkId
-              ? `https://arweave.net/${artworkId}`
-              : sourceArtworkUrl || undefined,
-            artworkId: artworkId || undefined,
-            title: getTagValue(tags, ["Title"]) || "POMP",
-            tokenId: getTagValue(tags, ["POAP-Token-Id"]),
-            dropId: getTagValue(tags, ["POAP-Drop-Id"]),
-            poapNetwork: getTagValue(tags, ["POAP-Network"]),
-            poapOwner: getTagValue(tags, ["POAP-Owner"]),
-            arweaveOwner: normalizeText(node?.owner?.address) || owner,
-            claimedAt: timestamp
-              ? new Date(timestamp * 1000).toISOString()
-              : "",
-            source: "arweave",
-          };
-        })
+        .map((edge: any) => pompAssetFromGraphqlEdge(edge, owner))
         .filter(Boolean);
     } catch (error) {
       lastError = error;
@@ -551,6 +524,93 @@ export async function fetchPompAssetsByOwner(
   throw lastError instanceof Error
     ? lastError
     : new Error("Unable to load POMPs from Arweave.");
+}
+
+function pompAssetFromGraphqlEdge(
+  edge: any,
+  fallbackOwner = ""
+): PompClaimedAsset | null {
+  const node = edge?.node;
+  const assetId = normalizeAoId(node?.id);
+  if (!assetId) return null;
+  const tags = node?.tags || [];
+  const artworkId = normalizeAoId(getTagValue(tags, ["POMP-Artwork", "Artwork"]));
+  const sourceArtworkUrl = getTagValue(tags, ["POAP-Artwork-Source"]);
+  const timestamp = Number(node?.block?.timestamp || 0);
+  return {
+    assetId,
+    bazarUrl: `https://bazar.arweave.net/#/asset/${assetId}`,
+    arweaveUrl: `https://arweave.net/${assetId}`,
+    artworkUrl: artworkId
+      ? `https://arweave.net/${artworkId}`
+      : sourceArtworkUrl || undefined,
+    artworkId: artworkId || undefined,
+    title: getTagValue(tags, ["Title"]) || "POMP",
+    tokenId: getTagValue(tags, ["POAP-Token-Id"]),
+    dropId: getTagValue(tags, ["POAP-Drop-Id"]),
+    poapNetwork: getTagValue(tags, ["POAP-Network"]),
+    poapOwner: getTagValue(tags, ["POAP-Owner"]),
+    arweaveOwner: normalizeText(node?.owner?.address) || fallbackOwner,
+    claimedAt: timestamp ? new Date(timestamp * 1000).toISOString() : "",
+    assetType: getTagValue(tags, ["POMP-Asset-Type"]),
+    sourceProtocol: getTagValue(tags, ["POMP-Source"]),
+    source: "arweave",
+  };
+}
+
+export async function fetchDiscoverPomps(
+  limit = 24
+): Promise<PompClaimedAsset[]> {
+  const query = `
+    query DiscoverPomps($tags: [TagFilter!], $first: Int!) {
+      transactions(tags: $tags, first: $first, sort: HEIGHT_DESC) {
+        edges {
+          node {
+            id
+            owner { address }
+            block { timestamp }
+            tags { name value }
+          }
+        }
+      }
+    }
+  `;
+  const variables = {
+    first: limit,
+    tags: [
+      { name: "App-Name", values: [POMP_APP_NAME] },
+      { name: "Type", values: [POMP_TYPE] },
+      { name: "POMP-Asset-Type", values: ["poap-claim", "native-event"] },
+      { name: "POMP-Source", values: ["POAP", "POMP"] },
+    ],
+  };
+
+  let lastError: unknown = null;
+  for (const endpoint of POMP_GRAPHQL_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, variables }),
+      });
+      if (!response.ok) {
+        throw new Error(`POMP discovery lookup failed: ${response.status}`);
+      }
+
+      const json = await response.json();
+      const edges = json?.data?.transactions?.edges || [];
+      return edges
+        .map((edge: any) => pompAssetFromGraphqlEdge(edge))
+        .filter(Boolean);
+    } catch (error) {
+      lastError = error;
+      console.warn(`POMP discovery lookup via ${endpoint} failed.`, error);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Unable to discover POMPs from Arweave.");
 }
 
 export async function mirrorPoapArtworkToArweave(

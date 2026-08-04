@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, getAddress, http, isAddress } from "viem";
 import type { Chain } from "viem";
+import { lookupPoapArchive } from "../_archive";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const POAP_API_BASE = process.env.POAP_API_BASE || "https://api.poap.tech";
 const POAP_CONTRACT_ADDRESS = "0x22C1f6050E56d2876009903609a2cC3fEf83B415";
@@ -393,6 +395,71 @@ function normalizePoap(raw: any): NormalizedPoap {
   };
 }
 
+async function enrichWithPoapArchive(
+  poap: NormalizedPoap
+): Promise<NormalizedPoap> {
+  const shouldCheckArchive =
+    process.env.POAP_ARCHIVE_ALWAYS_ENRICH === "true" ||
+    !poap.title ||
+    /^POAP \d+$/i.test(poap.title) ||
+    !poap.description ||
+    !poap.imageUrl ||
+    !poap.startDate ||
+    !poap.endDate ||
+    !poap.city ||
+    !poap.country ||
+    !poap.eventUrl ||
+    !poap.year;
+
+  if (!shouldCheckArchive) return poap;
+
+  const archive = await lookupPoapArchive({
+    tokenId: poap.tokenId,
+    dropId: poap.dropId,
+    ownerAddress: poap.ownerAddress,
+  }).catch(() => null);
+
+  const drop = archive?.drop;
+  if (!drop) return poap;
+
+  const archiveTokenId =
+    archive?.token?.poap_id != null
+      ? String(archive.token.poap_id)
+      : archive?.token?.source_uid || "";
+  const archiveNetwork = archive?.token?.network || "";
+  const archiveOwner = archive?.token?.owner_address || "";
+
+  return {
+    ...poap,
+    tokenId: poap.tokenId || archiveTokenId,
+    dropId: poap.dropId || String(drop.drop_id),
+    title:
+      poap.title && !/^POAP \d+$/i.test(poap.title)
+        ? poap.title
+        : drop.title || poap.title,
+    description: poap.description || drop.description || "",
+    imageUrl: poap.imageUrl || archive.artworkUrl,
+    eventUrl: poap.eventUrl || drop.event_url || "",
+    city: poap.city || drop.city || "",
+    country: poap.country || drop.country || "",
+    startDate: poap.startDate || drop.start_date || "",
+    endDate: poap.endDate || drop.end_date || "",
+    year: poap.year || (drop.year != null ? String(drop.year) : ""),
+    network: poap.network || archiveNetwork,
+    ownerAddress: poap.ownerAddress || archiveOwner,
+    raw: {
+      live: poap.raw,
+      archive,
+    },
+  };
+}
+
+async function enrichPoapsWithArchive(
+  poaps: NormalizedPoap[]
+): Promise<NormalizedPoap[]> {
+  return Promise.all(poaps.map(enrichWithPoapArchive));
+}
+
 export async function GET(request: NextRequest) {
   const address = request.nextUrl.searchParams.get("address") || "";
   if (!isAddress(address)) {
@@ -406,11 +473,11 @@ export async function GET(request: NextRequest) {
     process.env.POAP_API_KEY || process.env.NEXT_PUBLIC_POAP_API_KEY || "";
   const bearer = process.env.POAP_AUTH_TOKEN || process.env.POAP_BEARER_TOKEN || "";
   if (!apiKey && !bearer) {
-    const poaps = await fetchOnchainPoaps(address);
+    const poaps = await enrichPoapsWithArchive(await fetchOnchainPoaps(address));
     return NextResponse.json({
       address,
       count: poaps.length,
-      source: "onchain",
+      source: "onchain+archive-fallback",
       truncatedPerNetworkAt: MAX_ONCHAIN_TOKENS_PER_NETWORK,
       poaps,
     });
@@ -463,7 +530,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     address,
     count: items.length,
-    source: "poap-api",
-    poaps: items.map(normalizePoap),
+    source: "poap-api+archive-fallback",
+    poaps: await enrichPoapsWithArchive(items.map(normalizePoap)),
   });
 }

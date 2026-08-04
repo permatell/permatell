@@ -24,6 +24,10 @@ import { FaUser, FaStar } from "react-icons/fa";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { AuthorAvatar } from "@/components/ui/author-avatar";
 import { ArnsName } from "@/components/ui/arns-name";
+import {
+  fetchDiscoverPomps,
+  type PompClaimedAsset,
+} from "@/lib/pomp";
 
 const Dashboard = () => {
   const { stories, getStories, loading } = useStoriesProcess();
@@ -35,8 +39,11 @@ const Dashboard = () => {
   const { getAllStoryPoints, allUsersStoryPoints } = useStoryPointsProcess();
   const [topAuthors, setTopAuthors] = useState<[string, number][]>([]);
   const [isHovering, setIsHovering] = useState(false);
+  const [pomps, setPomps] = useState<PompClaimedAsset[]>([]);
+  const [loadingPomps, setLoadingPomps] = useState(false);
   const requestedStoriesRef = useRef(false);
   const requestedStoryPointsRef = useRef(false);
+  const requestedPompsRef = useRef(false);
 
   useEffect(() => {
     if (!requestedStoriesRef.current && stories.length === 0 && !loading) {
@@ -54,6 +61,19 @@ const Dashboard = () => {
       getAllStoryPoints();
     }
   }, [getAllStoryPoints, allUsersStoryPoints]);
+
+  useEffect(() => {
+    if (requestedPompsRef.current) return;
+    requestedPompsRef.current = true;
+    setLoadingPomps(true);
+    fetchDiscoverPomps()
+      .then(setPomps)
+      .catch((error) => {
+        console.warn("Unable to load POMPs for discovery:", error);
+        setPomps([]);
+      })
+      .finally(() => setLoadingPomps(false));
+  }, []);
 
   useEffect(() => {
     if (Object.keys(allUsersStoryPoints).length > 0) {
@@ -252,6 +272,114 @@ const Dashboard = () => {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="mb-10">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold text-white/90">
+              POMP Memories
+            </h2>
+            <p className="mt-1 text-sm text-gray-400">
+              POAP migrations and native POMP events discovered from Arweave/AO.
+            </p>
+          </div>
+          <Link href="/pomp">
+            <Button className="bg-gradient-to-r from-purple-500 to-cyan-500 text-white hover:from-purple-600 hover:to-cyan-600">
+              Create POMP
+            </Button>
+          </Link>
+        </div>
+
+        {loadingPomps ? (
+          <div className="flex justify-center items-center py-8">
+            <Spinner className="text-purple-500" />
+          </div>
+        ) : pomps.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {pomps.map((pomp, index) => (
+              <motion.div
+                key={pomp.assetId}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <CardContainer className="overflow-hidden flex flex-col relative h-[300px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-purple-500/25 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
+                  <div className="absolute top-2 right-2 z-10 rounded-full bg-black/80 px-2 py-1 text-[11px] font-semibold text-purple-100">
+                    {pomp.assetType === "native-event"
+                      ? "Native POMP"
+                      : "POAP POMP"}
+                  </div>
+                  <div className="relative h-36 bg-gray-950">
+                    {pomp.artworkUrl ? (
+                      <img
+                        src={pomp.artworkUrl}
+                        alt={`Artwork for ${pomp.title}`}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                        POMP
+                      </div>
+                    )}
+                  </div>
+                  <CardHeader className="pb-1 pt-3">
+                    <CardTitle className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent truncate text-base">
+                      {pomp.title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col flex-grow pt-1">
+                    <div className="space-y-1">
+                      {pomp.tokenId && (
+                        <p className="text-xs text-gray-300/90">
+                          POAP token:{" "}
+                          <b className="text-purple-200/90">{pomp.tokenId}</b>
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-300/90">
+                        Creator:{" "}
+                        <b className="text-purple-200/90">
+                          {pomp.arweaveOwner
+                            ? `${pomp.arweaveOwner.slice(0, 6)}...${pomp.arweaveOwner.slice(-4)}`
+                            : "Unknown"}
+                        </b>
+                      </p>
+                      {pomp.claimedAt && (
+                        <p className="text-xs text-gray-500">
+                          {new Date(pomp.claimedAt).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-auto grid grid-cols-2 gap-2">
+                      <a
+                        href={pomp.bazarUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button className="w-full bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700 text-sm h-8">
+                          Bazar
+                        </Button>
+                      </a>
+                      <a
+                        href={pomp.arweaveUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button className="w-full border border-gray-700 bg-black/40 text-gray-200 hover:bg-gray-900 text-sm h-8">
+                          Arweave
+                        </Button>
+                      </a>
+                    </div>
+                  </CardContent>
+                </CardContainer>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-gray-800 bg-black/30 p-6 text-center text-gray-400">
+            No POMPs discovered yet.
+          </div>
+        )}
       </div>
 
       <h2 className="text-2xl font-semibold mb-4 text-white/90">
