@@ -14,6 +14,7 @@ import {
   createNativePompAtomicAsset,
   createPompAtomicAsset,
   fetchOwnedPoaps,
+  fetchPompCampaignInfo,
   fetchPompAssetsByOwner,
   mirrorPoapArtworkToArweave,
   uploadPompArtworkToArweave,
@@ -21,6 +22,7 @@ import {
   type PoapNetworkKey,
   type PoapOwnershipResult,
   type PompAtomicAssetResult,
+  type PompCampaignInfo,
   type PompClaimedAsset,
   verifyPoapOwnership,
 } from "@/lib/pomp";
@@ -34,9 +36,10 @@ interface CreatedPompCampaign {
   title: string;
   creator: string;
   claimUrl: string;
-  claimWord: string;
+  claimWord?: string;
   maxClaims: number;
   createdAt: string;
+  source?: "browser" | "arweave";
 }
 
 function networkFromPoap(value: string): PoapNetworkKey {
@@ -150,6 +153,30 @@ function writeCreatedPompCampaigns(campaigns: CreatedPompCampaign[]) {
   );
 }
 
+function mergeCreatedCampaigns(
+  networkCampaigns: CreatedPompCampaign[],
+  browserCampaigns: CreatedPompCampaign[]
+): CreatedPompCampaign[] {
+  const merged = new Map<string, CreatedPompCampaign>();
+  for (const campaign of networkCampaigns) {
+    merged.set(campaign.assetId, campaign);
+  }
+  for (const campaign of browserCampaigns) {
+    const existing = merged.get(campaign.assetId);
+    merged.set(campaign.assetId, {
+      ...existing,
+      ...campaign,
+      claimWord: campaign.claimWord || existing?.claimWord,
+      source: existing?.source === "arweave" ? "arweave" : campaign.source || "browser",
+    });
+  }
+  return Array.from(merged.values()).sort((a, b) => {
+    const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return bTime - aTime;
+  });
+}
+
 function mergeClaims(
   networkClaims: PompClaimedAsset[],
   browserClaims: PompClaimedAsset[]
@@ -205,7 +232,11 @@ export default function PompPage() {
   const [createdCampaigns, setCreatedCampaigns] = useState<
     CreatedPompCampaign[]
   >([]);
+  const [campaignDetails, setCampaignDetails] = useState<
+    Record<string, PompCampaignInfo>
+  >({});
   const [loadingPompClaims, setLoadingPompClaims] = useState(false);
+  const [loadingCreatedCampaigns, setLoadingCreatedCampaigns] = useState(false);
 
   useEffect(() => {
     setClaimedPomps(readClaimedPomps());
@@ -278,8 +309,43 @@ export default function PompPage() {
     }
   };
 
+  const loadCreatedCampaigns = async () => {
+    const browserCampaigns = readCreatedPompCampaigns();
+    if (!arweaveMintAddress) {
+      setCreatedCampaigns(browserCampaigns);
+      return;
+    }
+
+    setLoadingCreatedCampaigns(true);
+    try {
+      const networkAssets = await fetchPompAssetsByOwner(arweaveMintAddress);
+      const networkCampaigns = networkAssets
+        .filter((claim) => isCampaignPomp(claim))
+        .map(
+          (claim): CreatedPompCampaign => ({
+            assetId: claim.assetId,
+            title: claim.title || "POMP Campaign",
+            creator: arweaveMintAddress,
+            claimUrl: `/pomp/claim/${claim.assetId}`,
+            maxClaims: 0,
+            createdAt: claim.claimedAt || new Date(0).toISOString(),
+            source: "arweave",
+          })
+        );
+      setCreatedCampaigns(
+        mergeCreatedCampaigns(networkCampaigns, browserCampaigns)
+      );
+    } catch (error) {
+      console.warn("Unable to load created POMP campaigns:", error);
+      setCreatedCampaigns(browserCampaigns);
+    } finally {
+      setLoadingCreatedCampaigns(false);
+    }
+  };
+
   useEffect(() => {
     loadClaimedPomps();
+    loadCreatedCampaigns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arweaveMintAddress]);
 
@@ -387,6 +453,24 @@ export default function PompPage() {
     }
   };
 
+  const loadCampaignDetails = async (assetId: string) => {
+    try {
+      const details = await fetchPompCampaignInfo(assetId);
+      setCampaignDetails((current) => ({ ...current, [assetId]: details }));
+    } catch (error) {
+      console.warn("Unable to load POMP campaign details:", error);
+    }
+  };
+
+  useEffect(() => {
+    createdCampaignsForWallet.forEach((campaign) => {
+      if (!campaignDetails[campaign.assetId]) {
+        loadCampaignDetails(campaign.assetId);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createdCampaignsForWallet]);
+
   const isCampaignPomp = (claim: PompClaimedAsset) =>
     claim.assetType === "native-event" || claim.sourceProtocol === "POMP";
 
@@ -403,6 +487,7 @@ export default function PompPage() {
       claimWord,
       maxClaims: Number(maxClaims) || 1,
       createdAt: new Date().toISOString(),
+      source: "browser",
     };
     const next = [
       campaign,
@@ -972,8 +1057,8 @@ export default function PompPage() {
                 Created POMP Campaigns
               </h2>
               <p className="mt-1 text-sm text-gray-400">
-                Claim links and claim words saved on this browser for campaigns
-                you created here.
+                Campaigns discovered from Arweave/AO for this creator wallet.
+                Claim words only show when they were saved in this browser.
               </p>
             </div>
 
@@ -985,7 +1070,7 @@ export default function PompPage() {
                     className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 p-3"
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <p className="font-medium text-white">
                           {campaign.title}
                         </p>
@@ -997,31 +1082,97 @@ export default function PompPage() {
                           {campaign.claimUrl}
                         </Link>
                         <p className="mt-2 text-xs text-cyan-100/75">
-                          Max claims: {campaign.maxClaims}
+                          Max claims:{" "}
+                          {campaignDetails[campaign.assetId]?.config?.TotalSupply ||
+                            campaign.maxClaims ||
+                            "Indexing"}
                         </p>
+                        {campaignDetails[campaign.assetId] ? (
+                          <p className="mt-1 text-xs text-cyan-100/75">
+                            Claimed: {campaignDetails[campaign.assetId].claimed}{" "}
+                            · Remaining:{" "}
+                            {campaignDetails[campaign.assetId].remaining} ·
+                            Owner balance:{" "}
+                            {campaignDetails[campaign.assetId].ownerBalance ||
+                              "0"}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs text-cyan-100/60">
+                            Loading AO campaign state...
+                          </p>
+                        )}
                         <p className="mt-1 text-xs text-cyan-100/75">
-                          Claim word saved locally:{" "}
-                          <span className="font-mono">
-                            {campaign.claimWord}
-                          </span>
+                          {campaign.claimWord ? (
+                            <>
+                              Claim word saved locally:{" "}
+                              <span className="font-mono">
+                                {campaign.claimWord}
+                              </span>
+                            </>
+                          ) : (
+                            "Claim word is not stored on-chain; it was not found in this browser."
+                          )}
                         </p>
                       </div>
-                      <Button
-                        type="button"
-                        onClick={() => copyClaimLink(campaign.claimUrl)}
-                        className="h-8 border border-cyan-300/35 bg-cyan-300/10 px-3 text-sm text-cyan-100 hover:bg-cyan-300/15"
-                      >
-                        Copy Link
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Link href={campaign.claimUrl}>
+                          <Button
+                            type="button"
+                            className="h-8 border border-purple-300/35 bg-purple-300/10 px-3 text-sm text-purple-100 hover:bg-purple-300/15"
+                          >
+                            Claim Page
+                          </Button>
+                        </Link>
+                        <Button
+                          type="button"
+                          onClick={() => copyClaimLink(campaign.claimUrl)}
+                          className="h-8 border border-cyan-300/35 bg-cyan-300/10 px-3 text-sm text-cyan-100 hover:bg-cyan-300/15"
+                        >
+                          Copy Link
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => loadCampaignDetails(campaign.assetId)}
+                          className="h-8 border border-gray-700 bg-gray-900 px-3 text-sm text-gray-100 hover:bg-gray-800"
+                        >
+                          Refresh Stats
+                        </Button>
+                      </div>
                     </div>
+                    {campaignDetails[campaign.assetId] &&
+                      Object.values(
+                        campaignDetails[campaign.assetId].claims || {}
+                      ).length > 0 && (
+                        <div className="mt-3 max-h-36 overflow-y-auto rounded-md border border-cyan-400/15 bg-black/25">
+                          {Object.values(
+                            campaignDetails[campaign.assetId].claims || {}
+                          ).map((claim, index) => (
+                            <div
+                              key={`${claim.WalletAddress || index}`}
+                              className="border-t border-cyan-400/10 px-3 py-2 first:border-t-0"
+                            >
+                              <p className="text-xs text-cyan-100/60">
+                                Claim #{claim.ClaimIndex || index + 1}
+                              </p>
+                              <p className="break-all font-mono text-xs text-cyan-100">
+                                {claim.WalletAddress ||
+                                  claim.Recipient ||
+                                  "Unknown wallet"}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                   </div>
                 ))}
               </div>
             ) : (
               <div className="rounded-lg border border-gray-800 bg-black/30 p-5 text-center text-sm text-gray-400">
                 {arweaveMintAddress
-                  ? "No locally saved creator campaigns for this wallet."
-                  : "Connect the creator Arweave wallet to view local campaign details."}
+                  ? loadingCreatedCampaigns
+                    ? "Loading creator campaigns from Arweave..."
+                    : "No POMP campaigns found for this creator wallet yet."
+                  : "Connect the creator Arweave wallet to view campaign details."}
               </div>
             )}
           </div>

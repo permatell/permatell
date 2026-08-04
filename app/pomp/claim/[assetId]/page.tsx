@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -9,7 +9,12 @@ import { Button } from "@/components/ui/button";
 import { CardContainer } from "@/components/ui/card-container";
 import { Input } from "@/components/ui/input";
 import { useWallet } from "@/contexts/WalletContext";
-import { claimPompCampaign, type PompCampaignClaimResult } from "@/lib/pomp";
+import {
+  claimPompCampaign,
+  fetchPompCampaignInfo,
+  type PompCampaignClaimResult,
+  type PompCampaignInfo,
+} from "@/lib/pomp";
 
 export default function PompClaimPage() {
   const params = useParams<{ assetId: string }>();
@@ -19,8 +24,29 @@ export default function PompClaimPage() {
   const [claiming, setClaiming] = useState(false);
   const [claimResult, setClaimResult] =
     useState<PompCampaignClaimResult | null>(null);
+  const [campaign, setCampaign] = useState<PompCampaignInfo | null>(null);
+  const [loadingCampaign, setLoadingCampaign] = useState(false);
 
   const arweaveAddress = walletType === "wander" ? address : null;
+  const claims = campaign ? Object.values(campaign.claims || {}) : [];
+
+  const loadCampaign = async () => {
+    if (!assetId) return;
+    setLoadingCampaign(true);
+    try {
+      setCampaign(await fetchPompCampaignInfo(assetId));
+    } catch (error) {
+      console.warn("Unable to load POMP campaign details:", error);
+      setCampaign(null);
+    } finally {
+      setLoadingCampaign(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCampaign();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId]);
 
   const handleClaim = async () => {
     if (!arweaveAddress) {
@@ -42,6 +68,7 @@ export default function PompClaimPage() {
       });
       setClaimResult(result);
       toast.success(result.message || "POMP claimed.");
+      await loadCampaign();
     } catch (error: any) {
       toast.error(error?.message || "Unable to claim this POMP.");
     } finally {
@@ -92,6 +119,76 @@ export default function PompClaimPage() {
               Arweave <ExternalLink className="h-3.5 w-3.5" />
             </a>
           </div>
+        </div>
+
+        <div className="mb-5 rounded-lg border border-cyan-400/20 bg-cyan-400/10 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-white">Campaign Details</h2>
+              <p className="mt-1 text-sm text-cyan-100/75">
+                {loadingCampaign
+                  ? "Loading AO campaign state..."
+                  : campaign
+                  ? `Loaded from ${campaign.source}`
+                  : "Campaign state is not indexed yet."}
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={loadCampaign}
+              disabled={loadingCampaign}
+              className="h-8 border border-cyan-300/35 bg-cyan-300/10 px-3 text-sm text-cyan-100 hover:bg-cyan-300/15"
+            >
+              Refresh
+            </Button>
+          </div>
+          {campaign && (
+            <>
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <div className="rounded-md bg-black/30 p-3">
+                  <p className="text-xs text-gray-500">Claimed</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {campaign.claimed}
+                  </p>
+                </div>
+                <div className="rounded-md bg-black/30 p-3">
+                  <p className="text-xs text-gray-500">Remaining</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {campaign.remaining}
+                  </p>
+                </div>
+                <div className="rounded-md bg-black/30 p-3">
+                  <p className="text-xs text-gray-500">Owner balance</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {campaign.ownerBalance || "0"}
+                  </p>
+                </div>
+              </div>
+              {claims.length > 0 && (
+                <div className="mt-4 overflow-hidden rounded-md border border-cyan-400/15">
+                  <div className="grid grid-cols-[64px_1fr] bg-black/40 px-3 py-2 text-xs uppercase tracking-wide text-cyan-100/60">
+                    <span>#</span>
+                    <span>Claim Wallet</span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {claims.map((claim, index) => (
+                      <div
+                        key={`${claim.WalletAddress || index}`}
+                        className="grid grid-cols-[64px_1fr] border-t border-cyan-400/10 px-3 py-2 text-sm"
+                      >
+                        <span className="text-cyan-100/70">
+                          {claim.ClaimIndex || index + 1}
+                        </span>
+                        <span className="break-all font-mono text-cyan-100">
+                          {claim.WalletAddress || claim.Recipient || "Unknown"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="mb-5 rounded-lg border border-purple-400/25 bg-purple-400/10 p-4">

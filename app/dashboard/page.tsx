@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { CardContainer } from "@/components/ui/card-container";
 import { Input } from "@/components/ui/input";
@@ -21,11 +21,14 @@ import { STORY_CATEGORIES } from "../constants/categories";
 import { IoMdThumbsUp, IoMdArrowBack, IoMdArrowForward } from "react-icons/io";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaUser, FaStar } from "react-icons/fa";
+import { Award } from "lucide-react";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { AuthorAvatar } from "@/components/ui/author-avatar";
 import { ArnsName } from "@/components/ui/arns-name";
 import {
   fetchDiscoverPomps,
+  fetchPompCampaignInfo,
+  type PompCampaignInfo,
   type PompClaimedAsset,
 } from "@/lib/pomp";
 
@@ -40,6 +43,9 @@ const Dashboard = () => {
   const [topAuthors, setTopAuthors] = useState<[string, number][]>([]);
   const [isHovering, setIsHovering] = useState(false);
   const [pomps, setPomps] = useState<PompClaimedAsset[]>([]);
+  const [pompCampaignStats, setPompCampaignStats] = useState<
+    Record<string, PompCampaignInfo>
+  >({});
   const [loadingPomps, setLoadingPomps] = useState(false);
   const requestedStoriesRef = useRef(false);
   const requestedStoryPointsRef = useRef(false);
@@ -66,11 +72,30 @@ const Dashboard = () => {
     if (requestedPompsRef.current) return;
     requestedPompsRef.current = true;
     setLoadingPomps(true);
-    fetchDiscoverPomps()
-      .then(setPomps)
+    fetchDiscoverPomps(36)
+      .then(async (discovered) => {
+        setPomps(discovered);
+        const nativePomps = discovered
+          .filter((pomp) => pomp.assetType === "native-event")
+          .slice(0, 12);
+        const stats = await Promise.allSettled(
+          nativePomps.map(async (pomp) => ({
+            assetId: pomp.assetId,
+            campaign: await fetchPompCampaignInfo(pomp.assetId),
+          }))
+        );
+        const nextStats: Record<string, PompCampaignInfo> = {};
+        for (const result of stats) {
+          if (result.status === "fulfilled") {
+            nextStats[result.value.assetId] = result.value.campaign;
+          }
+        }
+        setPompCampaignStats(nextStats);
+      })
       .catch((error) => {
         console.warn("Unable to load POMPs for discovery:", error);
         setPomps([]);
+        setPompCampaignStats({});
       })
       .finally(() => setLoadingPomps(false));
   }, []);
@@ -121,6 +146,19 @@ const Dashboard = () => {
       (prev) => (prev - 1 + topStories.length) % topStories.length
     );
   };
+
+  const topPomps = useMemo(
+    () =>
+      pomps
+        .filter((pomp) => pomp.assetType === "native-event")
+        .map((pomp) => ({
+          pomp,
+          stats: pompCampaignStats[pomp.assetId],
+        }))
+        .sort((a, b) => (b.stats?.claimed || 0) - (a.stats?.claimed || 0))
+        .slice(0, 3),
+    [pompCampaignStats, pomps]
+  );
 
   return (
     <div className="container mx-auto py-6 px-4">
@@ -271,6 +309,54 @@ const Dashboard = () => {
               </div>
             ))}
           </div>
+
+          <h2 className="mb-4 mt-8 text-xl font-bold text-white/95">
+            Top POMPs
+          </h2>
+          <div className="space-y-3">
+            {topPomps.length > 0 ? (
+              topPomps.map(({ pomp, stats }, index) => (
+                <Link
+                  key={pomp.assetId}
+                  href={`/pomp/claim/${pomp.assetId}`}
+                  className="block rounded-lg bg-black/40 p-3 transition-colors hover:bg-black/60"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-950">
+                      {pomp.artworkUrl ? (
+                        <img
+                          src={pomp.artworkUrl}
+                          alt={pomp.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <Award className="h-5 w-5 text-purple-300" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-grow">
+                      <p className="truncate font-medium text-white/90">
+                        {pomp.title}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {stats ? `${stats.claimed} claims` : "Indexing claims"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-sm font-bold text-purple-200">
+                      <FaStar
+                        size={14}
+                        className={index === 0 ? "text-yellow-500" : "text-gray-400"}
+                      />
+                      <span>{stats?.claimed || 0}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            ) : (
+              <div className="rounded-lg bg-black/30 p-3 text-sm text-gray-500">
+                No native POMP campaigns ranked yet.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -347,6 +433,16 @@ const Dashboard = () => {
                       {pomp.claimedAt && (
                         <p className="text-xs text-gray-500">
                           {new Date(pomp.claimedAt).toLocaleDateString()}
+                        </p>
+                      )}
+                      {pomp.assetType === "native-event" && (
+                        <p className="text-xs text-cyan-100/80">
+                          Claims:{" "}
+                          <b>
+                            {pompCampaignStats[pomp.assetId]?.claimed ?? "indexing"}
+                          </b>
+                          {pompCampaignStats[pomp.assetId] &&
+                            ` · Remaining: ${pompCampaignStats[pomp.assetId].remaining}`}
                         </p>
                       )}
                     </div>

@@ -198,6 +198,25 @@ export interface PompCampaignClaimResult {
   recipient?: string;
 }
 
+export interface PompCampaignInfo {
+  assetId: string;
+  config: Record<string, any>;
+  claims: Record<
+    string,
+    {
+      Timestamp?: string;
+      WalletAddress?: string;
+      Recipient?: string;
+      AssetId?: string;
+      ClaimIndex?: number;
+    }
+  >;
+  claimed: number;
+  remaining: number;
+  ownerBalance: string;
+  source: "dryrun" | "gateway";
+}
+
 export interface UploadResult {
   id: string;
   url: string;
@@ -661,55 +680,15 @@ export async function fetchPompAssetsByOwner(
   const owner = normalizeText(ownerAddress);
   if (!owner) return [];
 
-  const query = `
-    query PompAssetsByOwner($owners: [String!], $tags: [TagFilter!]) {
-      transactions(owners: $owners, tags: $tags, first: 50, sort: HEIGHT_DESC) {
-        edges {
-          node {
-            id
-            owner { address }
-            block { timestamp }
-            tags { name value }
-          }
-        }
-      }
-    }
-  `;
-  const variables = {
-    owners: [owner],
-    tags: [
-      { name: "App-Name", values: [POMP_APP_NAME] },
-      { name: "POMP-Asset-Type", values: ["poap-claim", "native-event"] },
-      { name: "POMP-Source", values: ["POAP", "POMP"] },
-    ],
-  };
-
-  let lastError: unknown = null;
-  for (const endpoint of POMP_GRAPHQL_ENDPOINTS) {
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, variables }),
-      });
-      if (!response.ok) {
-        throw new Error(`POMP GraphQL lookup failed: ${response.status}`);
-      }
-
-      const json = await response.json();
-      const edges = json?.data?.transactions?.edges || [];
-      return edges
-        .map((edge: any) => pompAssetFromGraphqlEdge(edge, owner))
-        .filter(Boolean);
-    } catch (error) {
-      lastError = error;
-      console.warn(`POMP GraphQL lookup via ${endpoint} failed.`, error);
-    }
+  const response = await fetch(
+    `/api/pomp/discover?owner=${encodeURIComponent(owner)}&limit=50`,
+    { cache: "no-store" }
+  );
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json?.error || "Unable to load POMPs from Arweave.");
   }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Unable to load POMPs from Arweave.");
+  return Array.isArray(json?.pomps) ? json.pomps : [];
 }
 
 function pompAssetFromGraphqlEdge(
@@ -747,56 +726,29 @@ function pompAssetFromGraphqlEdge(
 export async function fetchDiscoverPomps(
   limit = 24
 ): Promise<PompClaimedAsset[]> {
-  const query = `
-    query DiscoverPomps($tags: [TagFilter!], $first: Int!) {
-      transactions(tags: $tags, first: $first, sort: HEIGHT_DESC) {
-        edges {
-          node {
-            id
-            owner { address }
-            block { timestamp }
-            tags { name value }
-          }
-        }
-      }
-    }
-  `;
-  const variables = {
-    first: limit,
-    tags: [
-      { name: "App-Name", values: [POMP_APP_NAME] },
-      { name: "Type", values: [POMP_TYPE] },
-      { name: "POMP-Asset-Type", values: ["poap-claim", "native-event"] },
-      { name: "POMP-Source", values: ["POAP", "POMP"] },
-    ],
-  };
-
-  let lastError: unknown = null;
-  for (const endpoint of POMP_GRAPHQL_ENDPOINTS) {
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, variables }),
-      });
-      if (!response.ok) {
-        throw new Error(`POMP discovery lookup failed: ${response.status}`);
-      }
-
-      const json = await response.json();
-      const edges = json?.data?.transactions?.edges || [];
-      return edges
-        .map((edge: any) => pompAssetFromGraphqlEdge(edge))
-        .filter(Boolean);
-    } catch (error) {
-      lastError = error;
-      console.warn(`POMP discovery lookup via ${endpoint} failed.`, error);
-    }
+  const response = await fetch(`/api/pomp/discover?limit=${limit}`, {
+    cache: "no-store",
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json?.error || "Unable to discover POMPs from Arweave.");
   }
+  return Array.isArray(json?.pomps) ? json.pomps : [];
+}
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Unable to discover POMPs from Arweave.");
+export async function fetchPompCampaignInfo(
+  assetId: string
+): Promise<PompCampaignInfo> {
+  const id = normalizeAoId(assetId);
+  if (!id) throw new Error("A valid POMP asset id is required.");
+  const response = await fetch(`/api/pomp/campaign/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json?.error || "Unable to load POMP campaign details.");
+  }
+  return json;
 }
 
 export async function mirrorPoapArtworkToArweave(

@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { FaUser, FaImage, FaUpload } from "react-icons/fa";
+import { FaUpload } from "react-icons/fa";
 import { toast } from "sonner";
 import { uploadToArweave, getArweaveUrl } from "@/lib/arweave";
 import { getPrimaryArn, getAllArns } from "@/lib/arns";
@@ -37,6 +37,9 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
       website: ""
     }
   });
+
+  const thumbnailUrl = getArweaveUrl(formData.thumbnail);
+  const bannerUrl = getArweaveUrl(formData.banner);
 
   // Check for ARN when component mounts
   useEffect(() => {
@@ -269,7 +272,7 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
           <div className="flex items-center space-x-4">
             {formData.thumbnail ? (
               <img
-                src={getArweaveUrl(formData.thumbnail)}
+                src={thumbnailUrl}
                 alt="Profile"
                 className="h-20 w-20 rounded-full object-cover"
               />
@@ -278,29 +281,33 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
                 <span className="text-gray-400">No image</span>
               </div>
             )}
-            <div className="relative w-full">
+            <div className="w-full">
               <input
+                id="profile-thumbnail-upload"
                 type="file"
                 accept="image/*"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) handleImageUpload(file, "thumbnail");
                 }}
-                className="block w-full text-sm text-gray-400
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-md file:border-0
-                  file:text-sm file:font-medium
-                  file:bg-purple-600 file:text-white
-                  hover:file:bg-purple-700
-                  opacity-50 cursor-not-allowed"
-                disabled={true}
+                className="sr-only"
+                disabled={uploadingImage !== null}
               />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-md">
-                <div className="text-center">
-                  <span className="text-white text-sm font-medium block">Coming Soon</span>
-                  <span className="text-gray-400 text-xs block mt-1">Image uploads will be available in a future update</span>
-                </div>
-              </div>
+              <Label
+                htmlFor="profile-thumbnail-upload"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-purple-500/35 bg-purple-500/10 px-4 py-2 text-sm font-medium text-purple-100 transition-colors hover:bg-purple-500/15"
+              >
+                <FaUpload className="h-3.5 w-3.5" />
+                {uploadingImage === "thumbnail"
+                  ? "Uploading..."
+                  : formData.thumbnail
+                  ? "Replace Picture"
+                  : "Upload Picture"}
+              </Label>
+              <p className="mt-2 text-xs text-gray-400">
+                Uploads to Arweave and saves the transaction id on your AO
+                profile.
+              </p>
             </div>
             {uploadingImage === "thumbnail" && (
               <div className="ml-2">
@@ -317,7 +324,7 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
           <div className="space-y-2">
             {formData.banner ? (
               <img
-                src={getArweaveUrl(formData.banner)}
+                src={bannerUrl}
                 alt="Banner"
                 className="w-full h-32 object-cover rounded-lg"
               />
@@ -326,29 +333,32 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
                 <span className="text-gray-400">No banner</span>
               </div>
             )}
-            <div className="relative w-full">
+            <div className="w-full">
               <input
+                id="profile-banner-upload"
                 type="file"
                 accept="image/*"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) handleImageUpload(file, "banner");
                 }}
-                className="block w-full text-sm text-gray-400
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-md file:border-0
-                  file:text-sm file:font-medium
-                  file:bg-purple-600 file:text-white
-                  hover:file:bg-purple-700
-                  opacity-50 cursor-not-allowed"
-                disabled={true}
+                className="sr-only"
+                disabled={uploadingImage !== null}
               />
-              <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-md">
-                <div className="text-center">
-                  <span className="text-white text-sm font-medium block">Coming Soon</span>
-                  <span className="text-gray-400 text-xs block mt-1">Image uploads will be available in a future update</span>
-                </div>
-              </div>
+              <Label
+                htmlFor="profile-banner-upload"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-purple-500/35 bg-purple-500/10 px-4 py-2 text-sm font-medium text-purple-100 transition-colors hover:bg-purple-500/15"
+              >
+                <FaUpload className="h-3.5 w-3.5" />
+                {uploadingImage === "banner"
+                  ? "Uploading..."
+                  : formData.banner
+                  ? "Replace Banner"
+                  : "Upload Banner"}
+              </Label>
+              <p className="mt-2 text-xs text-gray-400">
+                Recommended: a wide image for best profile header display.
+              </p>
             </div>
             {uploadingImage === "banner" && (
               <div className="mt-2">

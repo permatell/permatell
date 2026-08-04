@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,12 @@ import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { AuthorAvatar } from "@/components/ui/author-avatar";
 import { ArnsName } from "@/components/ui/arns-name";
+import {
+  fetchDiscoverPomps,
+  fetchPompCampaignInfo,
+  type PompCampaignInfo,
+  type PompClaimedAsset,
+} from "@/lib/pomp";
 
 const AuthorBoard: React.FC = () => {
   const { getAllStoryPoints, allUsersStoryPoints, loading } =
@@ -23,11 +29,46 @@ const AuthorBoard: React.FC = () => {
   const [sortedAuthors, setSortedAuthors] = useState<[string, number][]>([]);
   const [authorStories, setAuthorStories] = useState<Record<string, any[]>>({});
   const [expandedAuthor, setExpandedAuthor] = useState<string | null>(null);
+  const [pomps, setPomps] = useState<PompClaimedAsset[]>([]);
+  const [pompCampaignStats, setPompCampaignStats] = useState<
+    Record<string, PompCampaignInfo>
+  >({});
+  const [loadingPomps, setLoadingPomps] = useState(false);
   const { address } = useWallet();
 
   useEffect(() => {
     getAllStoryPoints();
     getStories();
+  }, []);
+
+  useEffect(() => {
+    setLoadingPomps(true);
+    fetchDiscoverPomps(50)
+      .then(async (discovered) => {
+        setPomps(discovered);
+        const nativePomps = discovered.filter(
+          (pomp) => pomp.assetType === "native-event"
+        );
+        const stats = await Promise.allSettled(
+          nativePomps.map(async (pomp) => ({
+            assetId: pomp.assetId,
+            campaign: await fetchPompCampaignInfo(pomp.assetId),
+          }))
+        );
+        const nextStats: Record<string, PompCampaignInfo> = {};
+        for (const result of stats) {
+          if (result.status === "fulfilled") {
+            nextStats[result.value.assetId] = result.value.campaign;
+          }
+        }
+        setPompCampaignStats(nextStats);
+      })
+      .catch((error) => {
+        console.warn("Unable to load POMP leaderboard:", error);
+        setPomps([]);
+        setPompCampaignStats({});
+      })
+      .finally(() => setLoadingPomps(false));
   }, []);
 
   useEffect(() => {
@@ -67,6 +108,18 @@ const AuthorBoard: React.FC = () => {
   const toggleAuthor = (address: string) => {
     setExpandedAuthor(expandedAuthor === address ? null : address);
   };
+
+  const rankedPomps = useMemo(
+    () =>
+      pomps
+        .filter((pomp) => pomp.assetType === "native-event")
+        .map((pomp) => ({
+          pomp,
+          stats: pompCampaignStats[pomp.assetId],
+        }))
+        .sort((a, b) => (b.stats?.claimed || 0) - (a.stats?.claimed || 0)),
+    [pompCampaignStats, pomps]
+  );
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -170,6 +223,113 @@ const AuthorBoard: React.FC = () => {
       ) : (
         <div className="text-center text-gray-500">No authors found</div>
       )}
+
+      <div className="mt-10 border-t border-gray-800/60 pt-8">
+        <div className="mb-5">
+          <h2 className="text-2xl font-semibold text-white/90">
+            POMP Leaderboard
+          </h2>
+          <p className="mt-1 text-sm text-gray-400">
+            Native POMP campaigns ranked by claim count from their AO asset
+            state.
+          </p>
+        </div>
+
+        {loadingPomps ? (
+          <div className="flex min-h-[120px] items-center justify-center">
+            <Spinner className="h-8 w-8 text-purple-500" />
+          </div>
+        ) : rankedPomps.length > 0 ? (
+          <div className="space-y-4">
+            {rankedPomps.map(({ pomp, stats }, index) => (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                key={pomp.assetId}
+                className="rounded-lg border border-purple-500/25 bg-gradient-to-br from-black to-[#0F0514]/95 p-4 shadow-lg transition-all duration-300 hover:shadow-purple-500/20"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="flex items-center gap-4 sm:w-2/5">
+                    <span className={`font-bold ${getPointColor(index)}`}>
+                      {index + 1}.
+                    </span>
+                    <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-md bg-gray-950">
+                      {pomp.artworkUrl ? (
+                        <img
+                          src={pomp.artworkUrl}
+                          alt={pomp.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-xs text-gray-500">
+                          POMP
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-white/90">
+                        {pomp.title}
+                      </p>
+                      <p className="mt-1 break-all font-mono text-xs text-gray-500">
+                        {pomp.assetId}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid flex-1 grid-cols-3 gap-3 text-sm">
+                    <div className="rounded-md bg-black/30 p-3">
+                      <p className="text-xs text-gray-500">Claims</p>
+                      <p className="mt-1 font-semibold text-white">
+                        {stats?.claimed ?? 0}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-black/30 p-3">
+                      <p className="text-xs text-gray-500">Remaining</p>
+                      <p className="mt-1 font-semibold text-white">
+                        {stats?.remaining ?? "Indexing"}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-black/30 p-3">
+                      <p className="text-xs text-gray-500">Creator</p>
+                      <p className="mt-1 truncate font-mono text-xs text-white">
+                        {pomp.arweaveOwner || "Unknown"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <Link
+                      href={`/pomp/claim/${pomp.assetId}`}
+                      className="text-cyan-300 hover:text-cyan-200"
+                    >
+                      Claim
+                    </Link>
+                    <a
+                      href={pomp.bazarUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-cyan-300 hover:text-cyan-200"
+                    >
+                      Bazar
+                    </a>
+                    <a
+                      href={pomp.arweaveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-cyan-300 hover:text-cyan-200"
+                    >
+                      Arweave
+                    </a>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-gray-800/50 bg-black/30 p-6 text-center text-gray-500">
+            No native POMP campaigns found yet.
+          </div>
+        )}
+      </div>
     </div>
   );
 };
