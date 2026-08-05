@@ -290,23 +290,52 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       setLoading(true);
       const wallet = globalThis.arweaveWallet || window.arweaveWallet;
+      console.log("[wallet] Wander/ArConnect provider detected:", Boolean(wallet));
       if (!wallet?.connect || !wallet?.getActiveAddress) {
         throw new Error(
-          "Wander or ArConnect wallet was not detected. Install or enable the extension, then refresh the page."
+          "Wander or ArConnect was not detected. Install or enable the extension, allow this site to access it, then refresh the page."
         );
       }
 
-      await wallet.connect([
-        "ACCESS_ADDRESS",
-        "SIGN_TRANSACTION",
-        "DISPATCH",
-      ]);
+      const permissions = ["ACCESS_ADDRESS", "SIGN_TRANSACTION", "DISPATCH"];
+      console.log("[wallet] Requesting Wander/ArConnect permissions:", permissions);
+      await wallet.connect(permissions);
       const walletAddress = await wallet.getActiveAddress();
+      if (!walletAddress) {
+        throw new Error(
+          "The wallet connected but did not return an address. Unlock the wallet and try again."
+        );
+      }
       setAddress(walletAddress);
       setWalletType("wander");
     } catch (error) {
-      console.error("Failed to connect wallet:", error);
-      throw error;
+      const rawMessage =
+        error instanceof Error ? error.message : String(error || "Unknown wallet error");
+      const normalizedMessage = rawMessage.toLowerCase();
+      let message = rawMessage;
+
+      if (
+        normalizedMessage.includes("user rejected") ||
+        normalizedMessage.includes("user denied") ||
+        normalizedMessage.includes("rejected") ||
+        normalizedMessage.includes("denied")
+      ) {
+        message =
+          "Wallet connection was rejected. Approve the request in Wander or ArConnect and try again.";
+      } else if (
+        normalizedMessage.includes("not found") ||
+        normalizedMessage.includes("not detected") ||
+        normalizedMessage.includes("undefined")
+      ) {
+        message =
+          "Wander or ArConnect was not detected. Install or enable the extension, allow this site, then refresh the page.";
+      }
+
+      console.error("[wallet] Failed to connect Wander/ArConnect:", {
+        message: rawMessage,
+        providerDetected: Boolean(globalThis.arweaveWallet || window.arweaveWallet),
+      });
+      throw new Error(message);
     } finally {
       setLoading(false);
     }

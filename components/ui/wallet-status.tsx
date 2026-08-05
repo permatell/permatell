@@ -136,7 +136,7 @@ export function WalletStatus() {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Unable to connect Wander or ArConnect."
+          : "Unable to connect Wander or ArConnect. Check the extension and approve the request."
       );
     }
   };
