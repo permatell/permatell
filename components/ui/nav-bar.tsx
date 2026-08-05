@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { IoIosArrowBack, IoIosArrowForward } from "react-icons/io";
 import { FaStar } from "react-icons/fa";
-import { Check, ChevronDown, Server, Wifi } from "lucide-react";
+import { Check, ChevronDown, Menu, Server, Wifi, X } from "lucide-react";
 import { WalletStatus } from "@/components/ui/wallet-status";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
@@ -28,7 +28,9 @@ export function Navbar() {
   const { address } = useWallet();
   const { networkMode, setNetworkMode, isLegacy } = useNetworkMode();
   const [networkOpen, setNetworkOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const networkMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
   const canSwitchNetwork = process.env.NEXT_PUBLIC_AO_MODE !== "mainnet";
   const writeNode =
     process.env.NEXT_PUBLIC_AO_WRITE_URL ||
@@ -55,10 +57,27 @@ export function Navbar() {
       ) {
         setNetworkOpen(false);
       }
+      if (
+        mobileMenuRef.current &&
+        !mobileMenuRef.current.contains(event.target as Node)
+      ) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setNetworkOpen(false);
+        setMobileMenuOpen(false);
+      }
     };
 
     document.addEventListener("mousedown", closeMenu);
-    return () => document.removeEventListener("mousedown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, []);
 
   const switchNetwork = (next: "mainnet" | "legacy") => {
@@ -67,6 +86,13 @@ export function Navbar() {
     getStories().catch(() => {});
     if (address) getUserStoryPoints(address);
   };
+
+  const mobileNavItems = [
+    { href: "/dashboard", label: "Stories" },
+    { href: "/arns", label: "ArNS" },
+    { href: "/pomp", label: "POMP" },
+    { href: "/author-board", label: "Leaderboard" },
+  ];
 
   return (
     <header className="relative z-10 bg-gradient-to-br from-black via-gray-900 to-slate-900">
@@ -133,6 +159,40 @@ export function Navbar() {
                 Leaderboard
               </Link>
             </nav>
+            <div className="relative md:hidden" ref={mobileMenuRef}>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((open) => !open)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/20 text-gray-200 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+                aria-haspopup="menu"
+                aria-expanded={mobileMenuOpen}
+              >
+                {mobileMenuOpen ? (
+                  <X className="h-5 w-5" />
+                ) : (
+                  <Menu className="h-5 w-5" />
+                )}
+              </button>
+
+              {mobileMenuOpen && (
+                <nav
+                  aria-label="Mobile navigation"
+                  className="absolute right-0 top-11 z-30 w-52 rounded-lg border border-white/10 bg-gray-950/95 p-2 shadow-xl backdrop-blur-md"
+                >
+                  {mobileNavItems.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block rounded-md px-3 py-2.5 text-sm text-gray-200 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </nav>
+              )}
+            </div>
             <div className="relative" ref={networkMenuRef}>
               <button
                 type="button"
