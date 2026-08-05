@@ -13,6 +13,7 @@ import { useEvmWallet } from "@/contexts/EvmWalletContext";
 import {
   createNativePompAtomicAsset,
   createPompAtomicAsset,
+  fetchExistingPoapPompClaim,
   fetchOwnedPoaps,
   fetchPompCampaignInfo,
   fetchPompCampaignsByCreator,
@@ -555,6 +556,18 @@ export default function PompPage() {
     setMinting(true);
     setAsset(null);
     try {
+      if (isPoapMode) {
+        const existing = await fetchExistingPoapPompClaim({
+          network,
+          tokenId,
+        });
+        if (existing) {
+          setAsset(existing);
+          toast.error("This POAP has already been claimed as a POMP.");
+          return;
+        }
+      }
+
       let finalArtworkId = artworkId.trim();
       if (isPoapMode && selectedPoap && !finalArtworkId && selectedPoap.imageUrl) {
         setMirroringArtwork(true);

@@ -779,6 +779,27 @@ export async function fetchPompAssetDetail(
   return json;
 }
 
+export async function fetchExistingPoapPompClaim(input: {
+  network: PoapNetworkKey;
+  tokenId: string;
+}): Promise<PompClaimedAsset | null> {
+  const tokenId = normalizeText(input.tokenId);
+  if (!/^\d+$/.test(tokenId)) {
+    throw new Error("POAP token id must be a numeric string.");
+  }
+  const response = await fetch(
+    `/api/pomp/poap-claim?network=${encodeURIComponent(
+      input.network
+    )}&tokenId=${encodeURIComponent(tokenId)}`,
+    { cache: "no-store" }
+  );
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json?.error || "Unable to check existing POAP POMP claim.");
+  }
+  return json?.pomp || null;
+}
+
 export async function mirrorPoapArtworkToArweave(
   poap: Pick<OwnedPoap, "imageUrl" | "title" | "tokenId" | "dropId">
 ): Promise<UploadResult> {

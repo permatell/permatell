@@ -80,6 +80,16 @@ local function count_claims()
   return count
 end
 
+local function recipient_has_claimed(recipient)
+  if not recipient or recipient == "" then return false, nil end
+  for wallet, claim in pairs(POMPClaims) do
+    if claim and claim.Recipient == recipient then
+      return true, wallet
+    end
+  end
+  return false, nil
+end
+
 local function remaining_supply()
   local total = number_value(POMPCampaignConfig.TotalSupply)
   if total <= 0 and Token and Token.TotalSupply then
@@ -235,6 +245,14 @@ Handlers.add(
         reply_json(msg, "POMP-Claim-Error", {
           error = "This wallet already claimed this POMP",
           claim = POMPClaims[wallet]
+        }, { Status = "Already-Claimed" })
+        return
+      end
+      local recipientClaimed, recipientWallet = recipient_has_claimed(recipient)
+      if recipientClaimed then
+        reply_json(msg, "POMP-Claim-Error", {
+          error = "This recipient already claimed this POMP",
+          existingWallet = recipientWallet
         }, { Status = "Already-Claimed" })
         return
       end
