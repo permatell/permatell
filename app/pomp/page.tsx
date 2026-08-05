@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -241,6 +241,7 @@ export default function PompPage() {
   >({});
   const [loadingPompClaims, setLoadingPompClaims] = useState(false);
   const [loadingCreatedCampaigns, setLoadingCreatedCampaigns] = useState(false);
+  const archiveHydrationKey = useRef("");
 
   useEffect(() => {
     setClaimedPomps(readClaimedPomps());
@@ -259,6 +260,14 @@ export default function PompPage() {
     const archiveArtworkUrl = searchParams.get("artworkUrl") || "";
     const archiveNetwork = networkFromPoap(searchParams.get("network") || "gnosis");
     const archiveSnapshot = searchParams.get("archiveSnapshot") || "2026-07-02";
+    const hydrationKey = [
+      archiveDropId,
+      archiveTokenId,
+      archiveNetwork,
+      evmAddress || "",
+    ].join(":");
+    if (archiveHydrationKey.current === hydrationKey) return;
+    archiveHydrationKey.current = hydrationKey;
     const archivePoap: OwnedPoap = {
       id: `archive-${archiveDropId}-${archiveTokenId}`,
       tokenId: archiveTokenId,
@@ -276,7 +285,11 @@ export default function PompPage() {
       ownerAddress: evmAddress || "",
       raw: {
         source: "poap-archive-arweave",
-        archive: { source: "poap-archive-arweave", snapshot: archiveSnapshot },
+        archive: {
+          source: "poap-archive-arweave",
+          snapshot: archiveSnapshot,
+          artworkId: archiveArtworkId,
+        },
       },
     };
 
@@ -290,7 +303,41 @@ export default function PompPage() {
     setCity(archivePoap.city);
     setCountry(archivePoap.country);
     setVerification(null);
-    toast.message("Archived POAP loaded. Verify ownership before minting.");
+    if (!evmAddress) {
+      toast.message("Archived POAP loaded. Connect the EVM wallet to verify ownership.");
+      return;
+    }
+
+    let cancelled = false;
+    setVerifying(true);
+    toast.message("Archived POAP loaded. Verifying current ownership...");
+    verifyPoapOwnership({
+      network: archiveNetwork,
+      tokenId: archiveTokenId,
+      ownerAddress: evmAddress,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setVerification(result);
+        if (result.dropId) setDropId(result.dropId);
+        if (result.owns) {
+          toast.success("POAP ownership verified. Connect Arweave to create the POMP.");
+        } else {
+          toast.error("That EVM wallet does not currently own this POAP.");
+        }
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setVerification(null);
+        toast.error(error?.message || "Unable to verify POAP ownership.");
+      })
+      .finally(() => {
+        if (!cancelled) setVerifying(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [evmAddress, searchParams]);
 
   const activeOwner = useMemo(
@@ -456,7 +503,11 @@ export default function PompPage() {
     setDropId(poap.dropId);
     setTitle(poap.title);
     setDescription(poap.description);
-    setArtworkId("");
+    const archivedArtworkId =
+      typeof poap.raw === "object" && poap.raw !== null
+        ? String((poap.raw as any)?.archive?.artworkId || "")
+        : "";
+    setArtworkId(archivedArtworkId);
     setEventUrl(poap.eventUrl);
     setCity(poap.city);
     setCountry(poap.country);
