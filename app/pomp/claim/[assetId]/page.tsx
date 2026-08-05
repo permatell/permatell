@@ -8,6 +8,7 @@ import { Award, ExternalLink, KeyRound, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CardContainer } from "@/components/ui/card-container";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { PompAssetDetails } from "@/components/pomp/pomp-asset-details";
 import { useWallet } from "@/contexts/WalletContext";
 import {
@@ -30,6 +31,7 @@ export default function PompClaimPage() {
   const [asset, setAsset] = useState<PompAssetDetail | null>(null);
   const [campaign, setCampaign] = useState<PompCampaignInfo | null>(null);
   const [loadingCampaign, setLoadingCampaign] = useState(false);
+  const [assetLoadError, setAssetLoadError] = useState("");
 
   const arweaveAddress = walletType === "wander" ? address : null;
   const claims = campaign ? Object.values(campaign.claims || {}) : [];
@@ -37,6 +39,8 @@ export default function PompClaimPage() {
   const loadCampaign = async () => {
     if (!assetId) return;
     setLoadingCampaign(true);
+    setAssetLoadError("");
+    console.info("[pomp-claim] loading asset and campaign", { assetId });
     try {
       const [assetDetail, campaignDetail] = await Promise.allSettled([
         fetchPompAssetDetail(assetId),
@@ -44,11 +48,40 @@ export default function PompClaimPage() {
       ]);
       if (assetDetail.status === "fulfilled") {
         setAsset(assetDetail.value);
+        console.info("[pomp-claim] asset detail loaded", {
+          assetId,
+          title: assetDetail.value.title,
+          artworkUrl: assetDetail.value.artworkUrl,
+          assetType: assetDetail.value.assetType,
+          sourceProtocol: assetDetail.value.sourceProtocol,
+          metadataKeys: Object.keys(assetDetail.value.metadata || {}),
+          tagKeys: Object.keys(assetDetail.value.tags || {}),
+        });
+      } else {
+        setAsset(null);
+        setAssetLoadError(
+          assetDetail.reason?.message || "Unable to load POMP asset details."
+        );
+        console.warn("[pomp-claim] asset detail failed", {
+          assetId,
+          error: assetDetail.reason,
+        });
       }
       if (campaignDetail.status === "fulfilled") {
         setCampaign(campaignDetail.value);
+        console.info("[pomp-claim] campaign detail loaded", {
+          assetId,
+          source: campaignDetail.value.source,
+          claimed: campaignDetail.value.claimed,
+          remaining: campaignDetail.value.remaining,
+        });
       } else if (assetDetail.status === "fulfilled") {
         setCampaign(assetDetail.value.campaign);
+        console.warn("[pomp-claim] direct campaign load failed", {
+          assetId,
+          error: campaignDetail.reason,
+          fallbackCampaign: Boolean(assetDetail.value.campaign),
+        });
       }
     } catch (error) {
       console.warn("Unable to load POMP campaign details:", error);
@@ -92,7 +125,7 @@ export default function PompClaimPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-3xl px-4 py-8">
+    <div className="container mx-auto max-w-5xl px-4 py-8">
       <div className="mb-8">
         <Link href="/pomp" className="text-sm text-cyan-300 hover:text-cyan-200">
           Back to POMP
@@ -111,6 +144,21 @@ export default function PompClaimPage() {
       {asset && (
         <div className="mb-6">
           <PompAssetDetails asset={{ ...asset, campaign: campaign || asset.campaign }} />
+        </div>
+      )}
+      {loadingCampaign && !asset && (
+        <div className="mb-6 flex min-h-[180px] items-center justify-center rounded-lg border border-gray-800 bg-black/35">
+          <Spinner className="h-7 w-7 text-purple-400" />
+        </div>
+      )}
+      {!loadingCampaign && assetLoadError && (
+        <div className="mb-6 rounded-lg border border-yellow-400/25 bg-yellow-400/10 p-4 text-sm text-yellow-100">
+          <p className="font-medium">POMP asset details did not load.</p>
+          <p className="mt-1">{assetLoadError}</p>
+          <p className="mt-2 text-yellow-100/75">
+            The claim form can still work if AO campaign state is available.
+            Check the browser console for the `[pomp-claim]` log entries.
+          </p>
         </div>
       )}
 

@@ -17,13 +17,25 @@ export async function GET(
     );
   }
 
+  console.info("[pomp-detail] api request", { assetId });
   const asset = await fetchPompAssetDetail(assetId);
   if (!asset) {
+    console.warn("[pomp-detail] api not found", { assetId });
     return NextResponse.json(
       { error: "POMP asset was not found." },
       { status: 404 }
     );
   }
 
+  console.info("[pomp-detail] api response", {
+    assetId,
+    title: asset.title,
+    artworkUrl: asset.artworkUrl,
+    assetType: asset.assetType,
+    sourceProtocol: asset.sourceProtocol,
+    metadataKeys: Object.keys(asset.metadata || {}),
+    tagKeys: Object.keys(asset.tags || {}),
+    hasCampaign: Boolean(asset.campaign),
+  });
   return NextResponse.json(asset);
 }

@@ -20,11 +20,27 @@ export default function PompAssetPage() {
     if (!assetId) return;
     setLoading(true);
     setError("");
+    console.info("[pomp-detail] loading asset page", { assetId });
     try {
-      setAsset(await fetchPompAssetDetail(assetId));
+      const detail = await fetchPompAssetDetail(assetId);
+      setAsset(detail);
+      console.info("[pomp-detail] asset page loaded", {
+        assetId,
+        title: detail.title,
+        artworkUrl: detail.artworkUrl,
+        assetType: detail.assetType,
+        sourceProtocol: detail.sourceProtocol,
+        metadataKeys: Object.keys(detail.metadata || {}),
+        tagKeys: Object.keys(detail.tags || {}),
+        hasCampaign: Boolean(detail.campaign),
+      });
     } catch (err: any) {
       setAsset(null);
       setError(err?.message || "Unable to load POMP asset.");
+      console.warn("[pomp-detail] asset page failed", {
+        assetId,
+        error: err,
+      });
     } finally {
       setLoading(false);
     }

@@ -1019,21 +1019,21 @@ export default function PompPage() {
                       key={claim.assetId}
                       className="overflow-hidden rounded-lg border border-purple-400/25 bg-purple-400/10"
                     >
-                      {campaign ? (
-                        <Link
-                          href={`/pomp/claim/${claim.assetId}`}
-                          className="block transition hover:bg-purple-400/5 focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                        >
-                          {cardBody}
-                        </Link>
-                      ) : (
-                        <Link
-                          href={`/pomp/${claim.assetId}`}
-                          className="block transition hover:bg-purple-400/5 focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                        >
-                          {cardBody}
-                        </Link>
-                      )}
+                      <Link
+                        href={`/pomp/${claim.assetId}`}
+                        onClick={() =>
+                          console.info("[pomp-detail] claimed card opened", {
+                            assetId: claim.assetId,
+                            assetType: claim.assetType,
+                            sourceProtocol: claim.sourceProtocol,
+                            poapNetwork: claim.poapNetwork,
+                            tokenId: claim.tokenId,
+                          })
+                        }
+                        className="block transition hover:bg-purple-400/5 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                      >
+                        {cardBody}
+                      </Link>
                       <div className="flex flex-wrap gap-3 px-3 pb-3 pt-1 text-sm">
                         {campaign && (
                           <Link

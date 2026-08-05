@@ -379,7 +379,7 @@ const Dashboard = () => {
               topPomps.map(({ pomp, stats }, index) => (
                 <Link
                   key={pomp.assetId}
-                  href={`/pomp/claim/${pomp.assetId}`}
+                  href={`/pomp/${pomp.assetId}`}
                   className="block rounded-lg bg-black/40 p-3 transition-colors hover:bg-black/60"
                 >
                   <div className="flex items-center gap-3">
@@ -457,25 +457,25 @@ const Dashboard = () => {
                       ? "Native POMP"
                       : "POAP POMP"}
                   </div>
-                  {pomp.assetType === "native-event" ? (
-                    <Link
-                      href={`/pomp/claim/${pomp.assetId}`}
-                      className="block focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                    >
-                      <PompDiscoveryCardBody
-                        pomp={pomp}
-                        claimed={pompCampaignStats[pomp.assetId]?.claimed}
-                        remaining={pompCampaignStats[pomp.assetId]?.remaining}
-                      />
-                    </Link>
-                  ) : (
-                    <Link
-                      href={`/pomp/${pomp.assetId}`}
-                      className="block focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                    >
-                      <PompDiscoveryCardBody pomp={pomp} />
-                    </Link>
-                  )}
+                  <Link
+                    href={`/pomp/${pomp.assetId}`}
+                    onClick={() =>
+                      console.info("[pomp-detail] dashboard card opened", {
+                        assetId: pomp.assetId,
+                        assetType: pomp.assetType,
+                        sourceProtocol: pomp.sourceProtocol,
+                        poapNetwork: pomp.poapNetwork,
+                        tokenId: pomp.tokenId,
+                      })
+                    }
+                    className="block focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                  >
+                    <PompDiscoveryCardBody
+                      pomp={pomp}
+                      claimed={pompCampaignStats[pomp.assetId]?.claimed}
+                      remaining={pompCampaignStats[pomp.assetId]?.remaining}
+                    />
+                  </Link>
                   <CardContent className="flex flex-grow flex-col pt-1">
                     <div
                       className={`mt-auto grid gap-2 ${

@@ -242,11 +242,19 @@ async function fetchJsonFromGateways(id: string): Promise<Record<string, any>> {
       });
       if (!response.ok) continue;
       const parsed = safeJson(await response.text());
-      if (parsed && typeof parsed === "object") return parsed;
+      if (parsed && typeof parsed === "object") {
+        console.info("[pomp-detail] gateway metadata found", {
+          assetId: id,
+          gateway,
+          keys: Object.keys(parsed),
+        });
+        return parsed;
+      }
     } catch {
       // Try next gateway.
     }
   }
+  console.warn("[pomp-detail] gateway metadata missing", { assetId: id });
   return {};
 }
 
@@ -288,6 +296,12 @@ export async function fetchPompAssetDetail(
       if (!parsed) continue;
       asset = parsed;
       tags = tagsToRecord(edge?.node?.tags || []);
+      console.info("[pomp-detail] graphql asset found", {
+        assetId: id,
+        endpoint,
+        title: asset.title,
+        tagKeys: Object.keys(tags),
+      });
       break;
     } catch {
       // Try next endpoint.
@@ -298,6 +312,18 @@ export async function fetchPompAssetDetail(
   const campaign = await fetchPompCampaignInfo(id);
   const fields = extractAssetFields(metadata);
   const { drop, source, claim, campaignConfig } = fields;
+  console.info("[pomp-detail] metadata normalized", {
+    assetId: id,
+    hasGraphqlAsset: Boolean(asset),
+    metadataKeys: Object.keys(metadata || {}),
+    payloadKeys: Object.keys(fields.payload || {}),
+    metadataFieldKeys: Object.keys(fields.metadata || {}),
+    dataKeys: Object.keys(fields.data || {}),
+    dropKeys: Object.keys(drop || {}),
+    sourceKeys: Object.keys(source || {}),
+    campaignConfigKeys: Object.keys(campaignConfig || {}),
+    hasCampaign: Boolean(campaign),
+  });
 
   const assetType =
     firstText(
