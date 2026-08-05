@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Search, ShieldCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,18 +21,38 @@ interface ArchiveResult {
   snapshot: string;
 }
 
-function createPompUrl(result: ArchiveResult, tokenId: string, network: string) {
+function networkFromPoap(value: string): PoapNetworkKey {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("polygon")) return "polygon";
+  if (normalized.includes("base")) return "base";
+  if (normalized.includes("arbitrum")) return "arbitrum";
+  if (normalized.includes("linea")) return "linea";
+  if (normalized.includes("celo")) return "celo";
+  if (normalized.includes("ethereum") || normalized === "mainnet") return "ethereum";
+  return "gnosis";
+}
+
+function createPompUrl(
+  result: ArchiveResult,
+  tokenId: string,
+  network: string,
+  poap?: any
+) {
   const params = new URLSearchParams({
     fromArchive: "1",
     dropId: result.dropId,
     tokenId,
     network,
-    title: result.title,
+    title: poap?.title || result.title,
+    description: poap?.description || "",
     artworkId: result.artworkId,
     artworkUrl: result.artworkUrl,
-    year: result.year ? String(result.year) : "",
-    city: result.city,
-    country: result.country,
+    eventUrl: poap?.eventUrl || "",
+    year: poap?.year || (result.year ? String(result.year) : ""),
+    city: poap?.city || result.city,
+    country: poap?.country || result.country,
+    startDate: poap?.startDate || "",
+    endDate: poap?.endDate || "",
     archiveSnapshot: result.snapshot,
   });
   return `/pomp?${params.toString()}`;
@@ -46,15 +66,67 @@ export default function PoapArchivePage() {
   const [tokenId, setTokenId] = useState("");
   const [network, setNetwork] = useState<PoapNetworkKey>("gnosis");
   const [verification, setVerification] = useState<PoapOwnershipResult | null>(null);
+  const [ownedPoap, setOwnedPoap] = useState<any | null>(null);
   const [searching, setSearching] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [loadingOwnedPoap, setLoadingOwnedPoap] = useState(false);
+  const ownedLookupKey = useRef("");
+
+  useEffect(() => {
+    if (!selected || !evmAddress) return;
+    const lookupKey = `${evmAddress}:${selected.dropId}`;
+    if (ownedLookupKey.current === lookupKey) return;
+    ownedLookupKey.current = lookupKey;
+
+    let cancelled = false;
+    setLoadingOwnedPoap(true);
+    setVerification(null);
+    setOwnedPoap(null);
+    setTokenId("");
+    fetch(`/api/poap/collector?address=${encodeURIComponent(evmAddress)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(json?.error || "Unable to load POAPs for this wallet.");
+        }
+        return json;
+      })
+      .then((json) => {
+        if (cancelled) return;
+        const matches = (Array.isArray(json?.poaps) ? json.poaps : []).filter(
+          (poap: any) => String(poap?.dropId || "") === selected.dropId
+        );
+        const poap = matches[0];
+        if (!poap?.tokenId) {
+          toast.message("This wallet does not have a POAP from the selected drop.");
+          return;
+        }
+
+        setTokenId(String(poap.tokenId));
+        if (poap.network) setNetwork(networkFromPoap(String(poap.network)));
+        setOwnedPoap(poap);
+        toast.success("POAP found. Details and token ID filled automatically.");
+      })
+      .catch((error: any) => {
+        if (!cancelled) toast.error(error?.message || "Unable to find this wallet's POAP.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingOwnedPoap(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [evmAddress, selected]);
 
   const pompHref = useMemo(
     () =>
       selected && verification?.owns
-        ? createPompUrl(selected, tokenId.trim(), network)
+        ? createPompUrl(selected, tokenId.trim(), network, ownedPoap)
         : "",
-    [network, selected, tokenId, verification]
+    [network, ownedPoap, selected, tokenId, verification]
   );
 
   const searchArchive = async (event: React.FormEvent) => {
@@ -66,6 +138,8 @@ export default function PoapArchivePage() {
     setSearching(true);
     setSelected(null);
     setVerification(null);
+    setOwnedPoap(null);
+    ownedLookupKey.current = "";
     try {
       const response = await fetch(
         `/api/poap/archive/search?q=${encodeURIComponent(query.trim())}`,
@@ -127,12 +201,17 @@ export default function PoapArchivePage() {
         </div>
       </div>
       <div className="mt-5 grid gap-4 md:grid-cols-3">
-        <Input value={tokenId} onChange={(event) => setTokenId(event.target.value)} placeholder="POAP token ID" className="border-gray-700 bg-black/40 text-white" />
+        <Input
+          value={tokenId}
+          readOnly
+          placeholder={loadingOwnedPoap ? "Finding your POAP..." : "Connect wallet to find POAP"}
+          className="border-gray-700 bg-black/40 text-white"
+        />
         <select value={network} onChange={(event) => setNetwork(event.target.value as PoapNetworkKey)} className="h-10 rounded-md border border-gray-700 bg-black/40 px-3 text-sm text-white">
           {POAP_NETWORK_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
         </select>
         {evmAddress ? (
-          <Button type="button" onClick={verifyOwnership} disabled={verifying} className="gap-2">
+          <Button type="button" onClick={verifyOwnership} disabled={verifying || loadingOwnedPoap || !tokenId} className="gap-2">
             <ShieldCheck className="h-4 w-4" />
             {verifying ? "Verifying..." : "Verify ownership"}
           </Button>
@@ -203,6 +282,8 @@ export default function PoapArchivePage() {
               onClick={() => {
                 setSelected(result);
                 setVerification(null);
+                setOwnedPoap(null);
+                ownedLookupKey.current = "";
                 setTokenId("");
               }}
               className={`overflow-hidden rounded-lg border text-left transition ${

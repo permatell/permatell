@@ -258,6 +258,10 @@ export default function PompPage() {
 
     const archiveArtworkId = searchParams.get("artworkId") || "";
     const archiveArtworkUrl = searchParams.get("artworkUrl") || "";
+    const archiveDescription = searchParams.get("description") || "";
+    const archiveEventUrl = searchParams.get("eventUrl") || "";
+    const archiveStartDate = searchParams.get("startDate") || "";
+    const archiveEndDate = searchParams.get("endDate") || "";
     const archiveNetwork = networkFromPoap(searchParams.get("network") || "gnosis");
     const archiveSnapshot = searchParams.get("archiveSnapshot") || "2026-07-02";
     const hydrationKey = [
@@ -273,13 +277,15 @@ export default function PompPage() {
       tokenId: archiveTokenId,
       dropId: archiveDropId,
       title: archiveTitle,
-      description: "POAP metadata recovered from the permanent Arweave archive.",
+      description:
+        archiveDescription ||
+        "POAP metadata recovered from the permanent Arweave archive.",
       imageUrl: archiveArtworkUrl,
-      eventUrl: "",
+      eventUrl: archiveEventUrl,
       city: searchParams.get("city") || "",
       country: searchParams.get("country") || "",
-      startDate: "",
-      endDate: "",
+      startDate: archiveStartDate,
+      endDate: archiveEndDate,
       year: searchParams.get("year") || "",
       network: archiveNetwork,
       ownerAddress: evmAddress || "",
@@ -299,9 +305,13 @@ export default function PompPage() {
     setDropId(archiveDropId);
     setNetwork(archiveNetwork);
     setTitle(archiveTitle);
+    setDescription(archivePoap.description);
     setArtworkId(archiveArtworkId);
+    setEventUrl(archiveEventUrl);
     setCity(archivePoap.city);
     setCountry(archivePoap.country);
+    setStartDate(dateInputValue(archiveStartDate));
+    setEndDate(dateInputValue(archiveEndDate));
     setVerification(null);
     if (!evmAddress) {
       toast.message("Archived POAP loaded. Connect the EVM wallet to verify ownership.");
