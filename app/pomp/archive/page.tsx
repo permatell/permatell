@@ -112,6 +112,49 @@ export default function PoapArchivePage() {
     }
   };
 
+  const selectedDropPanel = selected ? (
+    <section className="sticky top-16 z-20 rounded-lg border border-cyan-400/25 bg-slate-950/95 p-5 shadow-xl shadow-black/30 backdrop-blur md:top-20">
+      <div className="flex items-start gap-3">
+        <ShieldCheck className="mt-1 h-5 w-5 shrink-0 text-cyan-300" />
+        <div>
+          <h2 className="text-xl font-semibold text-white">Verify and preserve this POAP</h2>
+          <p className="mt-1 text-sm text-gray-300">
+            {selected.title} · Drop {selected.dropId}
+          </p>
+          <p className="mt-1 text-sm text-gray-400">
+            Archive metadata and artwork are ready. Ownership is checked against the live POAP contract.
+          </p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-4 md:grid-cols-3">
+        <Input value={tokenId} onChange={(event) => setTokenId(event.target.value)} placeholder="POAP token ID" className="border-gray-700 bg-black/40 text-white" />
+        <select value={network} onChange={(event) => setNetwork(event.target.value as PoapNetworkKey)} className="h-10 rounded-md border border-gray-700 bg-black/40 px-3 text-sm text-white">
+          {POAP_NETWORK_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+        </select>
+        {evmAddress ? (
+          <Button type="button" onClick={verifyOwnership} disabled={verifying} className="gap-2">
+            <ShieldCheck className="h-4 w-4" />
+            {verifying ? "Verifying..." : "Verify ownership"}
+          </Button>
+        ) : (
+          <Button type="button" onClick={connectEvmWallet} className="gap-2">
+            <Wallet className="h-4 w-4" /> Connect EVM wallet
+          </Button>
+        )}
+      </div>
+      {verification?.owns && (
+        <div className="mt-5 flex flex-col gap-3 rounded-md border border-emerald-400/30 bg-emerald-400/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-emerald-100">Ownership verified for {evmAddress?.slice(0, 6)}...{evmAddress?.slice(-4)}.</p>
+          <Link href={pompHref}>
+            <Button type="button" className="gap-2 bg-emerald-600 hover:bg-emerald-500">
+              Create POMP <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
+        </div>
+      )}
+    </section>
+  ) : null;
+
   return (
     <div className="container mx-auto px-4 py-6">
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -149,6 +192,8 @@ export default function PoapArchivePage() {
         </Button>
       </form>
 
+      {selectedDropPanel}
+
       {results.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {results.map((result) => (
@@ -183,43 +228,6 @@ export default function PoapArchivePage() {
         </div>
       )}
 
-      {selected && (
-        <section className="mt-8 rounded-lg border border-cyan-400/25 bg-cyan-400/5 p-5">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-1 h-5 w-5 shrink-0 text-cyan-300" />
-            <div>
-              <h2 className="text-xl font-semibold text-white">Verify and preserve this POAP</h2>
-              <p className="mt-1 text-sm text-gray-300">The archive supplies permanent metadata and artwork. Ownership is checked against the live POAP contract.</p>
-            </div>
-          </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <Input value={tokenId} onChange={(event) => setTokenId(event.target.value)} placeholder="POAP token ID" className="border-gray-700 bg-black/40 text-white" />
-            <select value={network} onChange={(event) => setNetwork(event.target.value as PoapNetworkKey)} className="h-10 rounded-md border border-gray-700 bg-black/40 px-3 text-sm text-white">
-              {POAP_NETWORK_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
-            </select>
-            {evmAddress ? (
-              <Button type="button" onClick={verifyOwnership} disabled={verifying} className="gap-2">
-                <ShieldCheck className="h-4 w-4" />
-                {verifying ? "Verifying..." : "Verify ownership"}
-              </Button>
-            ) : (
-              <Button type="button" onClick={connectEvmWallet} className="gap-2">
-                <Wallet className="h-4 w-4" /> Connect EVM wallet
-              </Button>
-            )}
-          </div>
-          {verification?.owns && (
-            <div className="mt-5 flex flex-col gap-3 rounded-md border border-emerald-400/30 bg-emerald-400/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-emerald-100">Ownership verified for {evmAddress?.slice(0, 6)}...{evmAddress?.slice(-4)}.</p>
-              <Link href={pompHref}>
-                <Button type="button" className="gap-2 bg-emerald-600 hover:bg-emerald-500">
-                  Create POMP <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
-          )}
-        </section>
-      )}
     </div>
   );
 }
