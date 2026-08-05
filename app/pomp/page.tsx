@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Award, ExternalLink, Images, ShieldCheck, Sparkles } from "lucide-react";
@@ -201,6 +202,7 @@ export default function PompPage() {
     walletType,
   } = useWallet();
   const { evmAddress, connectEvm } = useEvmWallet();
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<PompMode>("poap");
   const [ownerAddress, setOwnerAddress] = useState("");
   const [poaps, setPoaps] = useState<OwnedPoap[]>([]);
@@ -244,6 +246,52 @@ export default function PompPage() {
     setClaimedPomps(readClaimedPomps());
     setCreatedCampaigns(readCreatedPompCampaigns());
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get("fromArchive") !== "1") return;
+
+    const archiveDropId = searchParams.get("dropId") || "";
+    const archiveTokenId = searchParams.get("tokenId") || "";
+    const archiveTitle = searchParams.get("title") || "";
+    if (!archiveDropId || !archiveTokenId || !archiveTitle) return;
+
+    const archiveArtworkId = searchParams.get("artworkId") || "";
+    const archiveArtworkUrl = searchParams.get("artworkUrl") || "";
+    const archiveNetwork = networkFromPoap(searchParams.get("network") || "gnosis");
+    const archiveSnapshot = searchParams.get("archiveSnapshot") || "2026-07-02";
+    const archivePoap: OwnedPoap = {
+      id: `archive-${archiveDropId}-${archiveTokenId}`,
+      tokenId: archiveTokenId,
+      dropId: archiveDropId,
+      title: archiveTitle,
+      description: "POAP metadata recovered from the permanent Arweave archive.",
+      imageUrl: archiveArtworkUrl,
+      eventUrl: "",
+      city: searchParams.get("city") || "",
+      country: searchParams.get("country") || "",
+      startDate: "",
+      endDate: "",
+      year: searchParams.get("year") || "",
+      network: archiveNetwork,
+      ownerAddress: evmAddress || "",
+      raw: {
+        source: "poap-archive-arweave",
+        archive: { source: "poap-archive-arweave", snapshot: archiveSnapshot },
+      },
+    };
+
+    setMode("poap");
+    setSelectedPoap(archivePoap);
+    setTokenId(archiveTokenId);
+    setDropId(archiveDropId);
+    setNetwork(archiveNetwork);
+    setTitle(archiveTitle);
+    setArtworkId(archiveArtworkId);
+    setCity(archivePoap.city);
+    setCountry(archivePoap.country);
+    setVerification(null);
+    toast.message("Archived POAP loaded. Verify ownership before minting.");
+  }, [evmAddress, searchParams]);
 
   const activeOwner = useMemo(
     () => ownerAddress.trim() || evmAddress || "",
@@ -620,7 +668,12 @@ export default function PompPage() {
                 tokenId,
                 dropId: dropId || verification.dropId || selectedPoap.dropId,
                 ownerAddress: verification.expectedOwner,
-                archiveSnapshot: "POAP API + poaparchive.com",
+                archiveSnapshot:
+                  (selectedPoap.raw as any)?.archive?.snapshot
+                    ? `Arweave POAP archive ${
+                        (selectedPoap.raw as any).archive.snapshot
+                      }`
+                    : "POAP API + poaparchive.com",
               },
             })
           : await createNativePompAtomicAsset({
@@ -745,6 +798,20 @@ export default function PompPage() {
         >
           Create New POMP
         </button>
+      </div>
+
+      <div className="mb-6 flex flex-col gap-3 rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-medium text-white">Looking for an older POAP?</p>
+          <p className="mt-1 text-sm text-gray-300">
+            Search the permanent archive, verify ownership, and bring it here as a POMP.
+          </p>
+        </div>
+        <Link href="/pomp/archive">
+          <Button type="button" className="border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20">
+            Browse POAP Archive
+          </Button>
+        </Link>
       </div>
 
       <div className="mb-6 grid gap-4 lg:grid-cols-3">

@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAddress } from "viem";
-import { isPoapArchiveConfigured, lookupPoapArchive } from "../_archive";
+import {
+  isPoapArchiveConfigured,
+  isPoapArchiveRemoteConfigured,
+  lookupPoapArchive,
+} from "../_archive";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  if (!isPoapArchiveConfigured()) {
+  const localConfigured = isPoapArchiveConfigured();
+  const remoteConfigured = isPoapArchiveRemoteConfigured();
+  if (!localConfigured && !remoteConfigured) {
     return NextResponse.json(
       {
         configured: false,
@@ -55,7 +61,7 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    configured: true,
+    configured: localConfigured || remoteConfigured,
     found: true,
     ...result,
   });
