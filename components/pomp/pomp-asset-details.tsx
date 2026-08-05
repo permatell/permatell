@@ -18,8 +18,18 @@ function DetailRow({ label, value }: { label: string; value?: string }) {
   );
 }
 
+function displayJson(value: Record<string, any>) {
+  const clone = { ...value };
+  delete clone.Balances;
+  delete clone.POMPClaims;
+  delete clone.Claims;
+  return JSON.stringify(clone, null, 2);
+}
+
 export function PompAssetDetails({ asset }: { asset: PompAssetDetail }) {
   const claims = Object.values(asset.campaign?.claims || {});
+  const tags = Object.entries(asset.tags || {});
+  const metadataPreview = displayJson(asset.metadata || {});
   const assetKind =
     asset.assetType === "native-event"
       ? "Native POMP Campaign"
@@ -157,6 +167,41 @@ export function PompAssetDetails({ asset }: { asset: PompAssetDetail }) {
                     ))}
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {(tags.length > 0 || metadataPreview !== "{}") && (
+            <div className="mt-5 grid gap-3 lg:grid-cols-2">
+              {tags.length > 0 && (
+                <details className="rounded-lg border border-gray-800 bg-black/30 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-white">
+                    Provenance Tags
+                  </summary>
+                  <div className="mt-3 max-h-56 overflow-y-auto space-y-2">
+                    {tags.map(([name, value]) => (
+                      <div key={name} className="text-xs">
+                        <p className="uppercase tracking-wide text-gray-500">
+                          {name}
+                        </p>
+                        <p className="break-words font-mono text-gray-200">
+                          {value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+
+              {metadataPreview !== "{}" && (
+                <details className="rounded-lg border border-gray-800 bg-black/30 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-white">
+                    Raw Metadata
+                  </summary>
+                  <pre className="mt-3 max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-black/40 p-3 text-xs text-gray-200">
+                    {metadataPreview}
+                  </pre>
+                </details>
               )}
             </div>
           )}

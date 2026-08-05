@@ -92,6 +92,57 @@ function normalizeText(value: unknown): string {
   }
 }
 
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    const text = normalizeText(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function firstAoId(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const id = normalizeAoId(value);
+    if (id) return id;
+  }
+  return undefined;
+}
+
+function unwrapAssetPayload(value: Record<string, any>): Record<string, any> {
+  const wrapped = typeof value?.asset === "string" ? safeJson(value.asset) : value?.asset;
+  return wrapped && typeof wrapped === "object" ? wrapped : value;
+}
+
+function extractAssetFields(value: Record<string, any>) {
+  const payload = unwrapAssetPayload(value || {});
+  const metadata =
+    payload?.Metadata && typeof payload.Metadata === "object"
+      ? payload.Metadata
+      : payload?.metadata && typeof payload.metadata === "object"
+      ? payload.metadata
+      : {};
+  const data =
+    payload?.Data && typeof payload.Data === "string"
+      ? safeJson(payload.Data)
+      : payload?.data && typeof payload.data === "string"
+      ? safeJson(payload.data)
+      : {};
+  const dataObject = data && typeof data === "object" ? data : {};
+  return {
+    payload,
+    metadata,
+    data: dataObject,
+    drop: payload?.drop || metadata?.drop || dataObject?.drop || {},
+    source: payload?.source || metadata?.source || dataObject?.source || {},
+    claim: payload?.claim || metadata?.claim || dataObject?.claim || {},
+    campaignConfig:
+      payload?.POMPCampaignConfig ||
+      payload?.CampaignConfig ||
+      payload?.config ||
+      {},
+  };
+}
+
 export function getTagValue(
   tags: Array<{ name?: string; value?: string }> | undefined,
   names: string[]
@@ -244,71 +295,145 @@ export async function fetchPompAssetDetail(
   }
 
   const metadata = await fetchJsonFromGateways(id);
-  const drop = metadata?.drop || {};
-  const source = metadata?.source || {};
   const campaign = await fetchPompCampaignInfo(id);
+  const fields = extractAssetFields(metadata);
+  const { drop, source, claim, campaignConfig } = fields;
 
   const assetType =
-    asset?.assetType ||
-    tags["POMP-Asset-Type"] ||
-    (source?.mode === "native-event" ? "native-event" : "");
+    firstText(
+      tags["POMP-Asset-Type"],
+      fields.metadata?.pompAssetType,
+      fields.metadata?.assetType,
+      source?.mode === "native-event" ? "native-event" : "",
+      campaignConfig?.AssetType,
+      asset?.assetType
+    ) || "";
   const sourceProtocol =
-    asset?.sourceProtocol || tags["POMP-Source"] || source?.protocol || "";
-  const artworkId =
-    asset?.artworkId ||
-    normalizeAoId(drop?.artworkId || tags["POMP-Artwork"] || tags.Artwork) ||
-    undefined;
+    firstText(
+      tags["POMP-Source"],
+      source?.protocol,
+      fields.metadata?.sourceProtocol,
+      asset?.sourceProtocol
+    ) || "";
+  const artworkId = firstAoId(
+    tags["POMP-Artwork"],
+    tags.Artwork,
+    drop?.artworkId,
+    fields.metadata?.artworkId,
+    fields.payload?.Artwork,
+    campaignConfig?.ArtworkId,
+    asset?.artworkId
+  );
+  const artworkSourceUrl = firstText(
+    tags["POAP-Artwork-Source"],
+    drop?.sourceArtworkUrl,
+    fields.metadata?.sourceArtworkUrl,
+    campaignConfig?.ArtworkUrl,
+    asset?.artworkUrl
+  );
+  const title = firstText(
+    tags.Title,
+    fields.payload?.title,
+    fields.payload?.Name,
+    fields.metadata?.title,
+    fields.metadata?.Name,
+    fields.data?.title,
+    campaign?.config?.Name,
+    campaignConfig?.Name,
+    asset?.title === "POMP" ? "" : asset?.title
+  ) || "POMP";
+  const createdAt = firstText(
+    fields.payload?.createdAt,
+    fields.metadata?.createdAt,
+    fields.data?.createdAt,
+    tags["Created-At"],
+    asset?.claimedAt
+  );
 
   const baseAsset: PompAsset =
     asset || {
       assetId: id,
       bazarUrl: `https://bazar.arweave.net/#/asset/${id}`,
       arweaveUrl: `https://arweave.net/${id}`,
-      title: tags.Title || metadata?.title || campaign?.config?.Name || "POMP",
-      tokenId: tags["POAP-Token-Id"] || "",
-      dropId: tags["POAP-Drop-Id"] || "",
-      poapNetwork: tags["POAP-Network"] || "",
-      poapOwner: tags["POAP-Owner"] || "",
-      arweaveOwner: tags.Creator || source?.creator || "",
-      claimedAt: metadata?.createdAt || "",
+      title,
+      tokenId: firstText(tags["POAP-Token-Id"], source?.tokenId, claim?.tokenId),
+      dropId: firstText(tags["POAP-Drop-Id"], source?.dropId, claim?.dropId),
+      poapNetwork: firstText(tags["POAP-Network"], source?.network, claim?.network),
+      poapOwner: firstText(tags["POAP-Owner"], source?.ownerAddress, claim?.ownerAddress),
+      arweaveOwner: firstText(tags.Creator, source?.creator, fields.metadata?.creator),
+      claimedAt: createdAt,
       source: "arweave",
     };
 
   return {
     ...baseAsset,
-    title:
-      baseAsset.title ||
-      metadata?.title ||
-      campaign?.config?.Name ||
-      tags.Title ||
-      "POMP",
+    title,
+    tokenId: firstText(baseAsset.tokenId, tags["POAP-Token-Id"], source?.tokenId, claim?.tokenId),
+    dropId: firstText(baseAsset.dropId, tags["POAP-Drop-Id"], source?.dropId, claim?.dropId),
+    poapNetwork: firstText(baseAsset.poapNetwork, tags["POAP-Network"], source?.network, claim?.network),
+    poapOwner: firstText(baseAsset.poapOwner, tags["POAP-Owner"], source?.ownerAddress, claim?.ownerAddress),
+    arweaveOwner: firstText(
+      tags.Creator,
+      source?.creator,
+      fields.metadata?.creator,
+      campaignConfig?.Creator,
+      baseAsset.arweaveOwner
+    ),
+    claimedAt: firstText(baseAsset.claimedAt, createdAt),
     artworkId,
     artworkUrl:
       artworkId
         ? `https://arweave.net/${artworkId}`
-        : baseAsset.artworkUrl || tags["POAP-Artwork-Source"] || undefined,
+        : artworkSourceUrl || undefined,
     assetType,
     sourceProtocol,
     tags,
     metadata,
-    description:
-      metadata?.description ||
-      drop?.description ||
-      campaign?.config?.Description ||
-      tags.Description ||
-      "",
-    eventUrl: drop?.eventUrl || campaign?.config?.EventUrl || tags["Event-URL"] || "",
-    city: drop?.city || campaign?.config?.City || tags["Event-City"] || "",
-    country:
-      drop?.country || campaign?.config?.Country || tags["Event-Country"] || "",
-    startDate:
-      drop?.startDate ||
-      campaign?.config?.StartDate ||
-      tags["Event-Start-Date"] ||
-      "",
-    endDate:
-      drop?.endDate || campaign?.config?.EndDate || tags["Event-End-Date"] || "",
-    createdAt: metadata?.createdAt || baseAsset.claimedAt || "",
+    description: firstText(
+      fields.payload?.description,
+      fields.metadata?.description,
+      fields.data?.description,
+      drop?.description,
+      campaign?.config?.Description,
+      campaignConfig?.Description,
+      tags.Description
+    ),
+    eventUrl: firstText(
+      drop?.eventUrl,
+      fields.metadata?.eventUrl,
+      campaign?.config?.EventUrl,
+      campaignConfig?.EventUrl,
+      tags["Event-URL"]
+    ),
+    city: firstText(
+      drop?.city,
+      fields.metadata?.city,
+      campaign?.config?.City,
+      campaignConfig?.City,
+      tags["Event-City"]
+    ),
+    country: firstText(
+      drop?.country,
+      fields.metadata?.country,
+      campaign?.config?.Country,
+      campaignConfig?.Country,
+      tags["Event-Country"]
+    ),
+    startDate: firstText(
+      drop?.startDate,
+      fields.metadata?.startDate,
+      campaign?.config?.StartDate,
+      campaignConfig?.StartDate,
+      tags["Event-Start-Date"]
+    ),
+    endDate: firstText(
+      drop?.endDate,
+      fields.metadata?.endDate,
+      campaign?.config?.EndDate,
+      campaignConfig?.EndDate,
+      tags["Event-End-Date"]
+    ),
+    createdAt,
     campaign,
   };
 }
