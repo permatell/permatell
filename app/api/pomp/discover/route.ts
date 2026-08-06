@@ -3,6 +3,7 @@ import {
   POMP_APP_NAME,
   POMP_GRAPHQL_ENDPOINTS,
   POMP_TYPE,
+  getTagValue,
   pompAssetFromGraphqlEdge,
 } from "../_shared";
 
@@ -21,6 +22,23 @@ export async function GET(request: NextRequest) {
 
   const query = `
     query DiscoverPomps($owners: [String!], $tags: [TagFilter!], $first: Int!) {
+      transactions(owners: $owners, tags: $tags, first: $first, sort: HEIGHT_DESC) {
+        edges {
+          node {
+            id
+            owner { address }
+            block { timestamp }
+            tags { name value }
+          }
+        }
+      }
+    }
+  `;
+  // Some indexers do not expose every POMP tag consistently in a compound
+  // GraphQL filter. Keep the strict query for efficiency, then use this
+  // broader PermaTell query as a compatibility fallback.
+  const broadQuery = `
+    query DiscoverPermaTell($owners: [String!], $tags: [TagFilter!], $first: Int!) {
       transactions(owners: $owners, tags: $tags, first: $first, sort: HEIGHT_DESC) {
         edges {
           node {
@@ -75,6 +93,46 @@ export async function GET(request: NextRequest) {
         });
       }
       lastError = `No POMPs indexed at ${endpoint}.`;
+
+      const broadResponse = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: broadQuery,
+          variables: {
+            owners: owner ? [owner] : undefined,
+            first: Math.max(limit, 100),
+            tags: [{ name: "App-Name", values: [POMP_APP_NAME] }],
+          },
+        }),
+        cache: "no-store",
+      });
+      if (broadResponse.ok) {
+        const broadJson = JSON.parse(await broadResponse.text());
+        const broadEdges = broadJson?.data?.transactions?.edges || [];
+        const broadPomps = broadEdges
+          .filter((edge: any) => {
+            const tags = edge?.node?.tags || [];
+            const type = getTagValue(tags, ["Type"]);
+            const assetType = getTagValue(tags, ["POMP-Asset-Type"]);
+            const source = getTagValue(tags, ["POMP-Source"]);
+            return (
+              type === POMP_TYPE ||
+              ["poap-claim", "native-event"].includes(assetType) ||
+              ["POAP", "POMP"].includes(source)
+            );
+          })
+          .map((edge: any) => pompAssetFromGraphqlEdge(edge, owner))
+          .filter(Boolean)
+          .slice(0, limit);
+        if (broadPomps.length > 0) {
+          return NextResponse.json({
+            source: endpoint,
+            count: broadPomps.length,
+            pomps: broadPomps,
+          });
+        }
+      }
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }

@@ -141,22 +141,30 @@ const Dashboard = () => {
         const discovered = await fetchDiscoverPomps(36);
         if (cancelled) return;
         setPomps(discovered);
+        // Asset discovery and campaign metrics use different backends. Do not
+        // hide discovered memories while an AO/HyperBEAM stats read is slow.
+        setLoadingPomps(false);
         const nativePomps = discovered
           .filter((pomp) => pomp.assetType === "native-event")
           .slice(0, 12);
         const stats = await Promise.allSettled(
           nativePomps.map(async (pomp) => ({
             assetId: pomp.assetId,
-            campaign: await fetchPompCampaignInfo(pomp.assetId),
+            campaign: await Promise.race([
+              fetchPompCampaignInfo(pomp.assetId),
+              new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), 4000)
+              ),
+            ]),
           }))
         );
         const nextStats: Record<string, PompCampaignInfo> = {};
         for (const result of stats) {
-          if (result.status === "fulfilled") {
+          if (result.status === "fulfilled" && result.value.campaign) {
             nextStats[result.value.assetId] = result.value.campaign;
           }
         }
-        setPompCampaignStats(nextStats);
+        if (!cancelled) setPompCampaignStats(nextStats);
 
         if (discovered.length === 0 && attempt < 2) {
           attempt += 1;
