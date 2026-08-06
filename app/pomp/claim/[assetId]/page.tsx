@@ -30,11 +30,33 @@ export default function PompClaimPage() {
     useState<PompCampaignClaimResult | null>(null);
   const [asset, setAsset] = useState<PompAssetDetail | null>(null);
   const [campaign, setCampaign] = useState<PompCampaignInfo | null>(null);
+  const [savedClaimWord, setSavedClaimWord] = useState("");
   const [loadingCampaign, setLoadingCampaign] = useState(false);
   const [assetLoadError, setAssetLoadError] = useState("");
 
   const arweaveAddress = walletType === "wander" ? address : null;
   const claims = campaign ? Object.values(campaign.claims || {}) : [];
+  const creatorAddress = asset?.tags?.Creator || asset?.arweaveOwner || "";
+  const isCreator = Boolean(
+    arweaveAddress &&
+      creatorAddress &&
+      arweaveAddress.toLowerCase() === creatorAddress.toLowerCase()
+  );
+
+  useEffect(() => {
+    if (!assetId || typeof window === "undefined") return;
+    try {
+      const records = JSON.parse(
+        localStorage.getItem("permatell_created_pomp_campaigns") || "[]"
+      );
+      const record = Array.isArray(records)
+        ? records.find((item: any) => item?.assetId === assetId)
+        : null;
+      setSavedClaimWord(record?.claimWord || "");
+    } catch {
+      setSavedClaimWord("");
+    }
+  }, [assetId]);
 
   const loadCampaign = async () => {
     if (!assetId) return;
@@ -253,6 +275,42 @@ export default function PompClaimPage() {
                         </span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+              {isCreator && (
+                <div className="mt-4 rounded-md border border-purple-400/25 bg-purple-400/10 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-semibold text-purple-100">Creator Dashboard</h3>
+                    <span className="rounded-full border border-purple-300/30 px-2 py-1 text-xs text-purple-200">
+                      Creator wallet connected
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-gray-500">Claim method</p>
+                      <p className="mt-1 text-sm text-white">Secret word</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Max claims</p>
+                      <p className="mt-1 text-sm text-white">
+                        {campaign.config?.TotalSupply || campaign.config?.maxClaims || "Unknown"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Claim start</p>
+                      <p className="mt-1 text-sm text-white">{campaign.config?.ClaimStart || campaign.config?.claimStart || "Any time"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Claim end</p>
+                      <p className="mt-1 text-sm text-white">{campaign.config?.ClaimEnd || campaign.config?.claimEnd || "No end date"}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-md border border-purple-300/20 bg-black/25 p-3">
+                    <p className="text-xs text-gray-500">Event claim word</p>
+                    <p className="mt-1 font-mono text-sm text-purple-100">
+                      {savedClaimWord || "Saved only in the browser that created this campaign"}
+                    </p>
                   </div>
                 </div>
               )}

@@ -21,6 +21,17 @@ import Image from "next/image";
 import { User, ExternalLink, ArrowLeft, Edit, Copy, Check, Wallet, RefreshCw } from "lucide-react";
 import { ArnsName } from "@/components/ui/arns-name";
 import { ArnsList } from "@/components/ui/arns-list";
+import {
+  fetchPompCampaignInfo,
+  fetchPompCampaignsByCreator,
+  type PompCampaignInfo,
+  type PompClaimedAsset,
+} from "@/lib/pomp";
+
+interface ProfilePompCampaign {
+  asset: PompClaimedAsset;
+  campaign: PompCampaignInfo | null;
+}
 
 export default function ProfilePage() {
   const { address, profile, profileLoading, refreshBalance } = useWallet();
@@ -34,6 +45,8 @@ export default function ProfilePage() {
   const [assets, setAssets] = useState<string[]>([]);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [copiedProfileId, setCopiedProfileId] = useState(false);
+  const [pompCampaigns, setPompCampaigns] = useState<ProfilePompCampaign[]>([]);
+  const [pompCampaignsLoading, setPompCampaignsLoading] = useState(false);
 
   useEffect(() => {
     if (!address && !profileLoading) {
@@ -97,6 +110,43 @@ export default function ProfilePage() {
       setUserStories([]);
     }
   }, [address, stories]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!address) {
+      setPompCampaigns([]);
+      return;
+    }
+
+    setPompCampaignsLoading(true);
+    fetchPompCampaignsByCreator(address)
+      .then(async (assets) => {
+        const campaigns = await Promise.all(
+          assets.map(async (asset) => {
+            try {
+              return {
+                asset,
+                campaign: await fetchPompCampaignInfo(asset.assetId),
+              };
+            } catch {
+              return { asset, campaign: null };
+            }
+          })
+        );
+        if (!cancelled) setPompCampaigns(campaigns);
+      })
+      .catch((error) => {
+        console.warn("Unable to load profile POMP campaigns:", error);
+        if (!cancelled) setPompCampaigns([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPompCampaignsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
 
   const copyToClipboard = (text: string, type: 'address' | 'profileId') => {
     navigator.clipboard.writeText(text).then(() => {
@@ -366,6 +416,16 @@ export default function ProfilePage() {
                 >
                   Stories
                 </button>
+                <button
+                  className={`pb-2 ${
+                    activeTab === "pomps"
+                      ? "text-purple-400 border-b-2 border-purple-400"
+                      : "text-gray-400 hover:text-gray-300"
+                  }`}
+                  onClick={() => setActiveTab("pomps")}
+                >
+                  POMPs
+                </button>
               </div>
             </div>
 
@@ -575,6 +635,60 @@ export default function ProfilePage() {
                       >
                         Create your first story
                       </Link>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === "pomps" && (
+                <div>
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-medium text-white">Active POMP Campaigns</h2>
+                      <p className="mt-1 text-sm text-gray-400">
+                        Campaign state is loaded from Arweave and AO for this creator wallet.
+                      </p>
+                    </div>
+                    <Link href="/pomp" className="text-sm text-cyan-300 hover:text-cyan-200">
+                      Create POMP
+                    </Link>
+                  </div>
+                  {pompCampaignsLoading ? (
+                    <div className="flex justify-center py-8"><Spinner /></div>
+                  ) : pompCampaigns.length > 0 ? (
+                    <div className="space-y-4">
+                      {pompCampaigns.map(({ asset, campaign }) => (
+                        <div key={asset.assetId} className="rounded-lg border border-cyan-400/25 bg-cyan-400/5 p-4">
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div>
+                              <h3 className="font-semibold text-white">{asset.title || "POMP Campaign"}</h3>
+                              <p className="mt-1 break-all font-mono text-xs text-cyan-200">{asset.assetId}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Link href={`/pomp/claim/${asset.assetId}`} className="rounded-md border border-purple-300/30 px-3 py-2 text-sm text-purple-100 hover:bg-purple-400/10">
+                                Claim Page
+                              </Link>
+                              <Link href={`/pomp/${asset.assetId}`} className="rounded-md border border-cyan-300/30 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-400/10">
+                                View POMP
+                              </Link>
+                            </div>
+                          </div>
+                          {campaign ? (
+                            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                              <div><p className="text-xs text-gray-500">Claimed</p><p className="mt-1 text-white">{campaign.claimed}</p></div>
+                              <div><p className="text-xs text-gray-500">Remaining</p><p className="mt-1 text-white">{campaign.remaining}</p></div>
+                              <div><p className="text-xs text-gray-500">Max claims</p><p className="mt-1 text-white">{campaign.config?.TotalSupply || campaign.config?.maxClaims || "Unknown"}</p></div>
+                              <div><p className="text-xs text-gray-500">State source</p><p className="mt-1 text-white">{campaign.source}</p></div>
+                            </div>
+                          ) : (
+                            <p className="mt-3 text-sm text-yellow-100">AO campaign state is still loading or not indexed.</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-gray-700 bg-black/20 p-6 text-center text-gray-400">
+                      No POMP campaigns found for this creator wallet yet.
                     </div>
                   )}
                 </div>
