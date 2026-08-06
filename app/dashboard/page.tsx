@@ -21,7 +21,7 @@ import { STORY_CATEGORIES } from "../constants/categories";
 import { IoMdThumbsUp, IoMdArrowBack, IoMdArrowForward } from "react-icons/io";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaUser, FaStar } from "react-icons/fa";
-import { Award } from "lucide-react";
+import { Award, RefreshCw } from "lucide-react";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { AuthorAvatar } from "@/components/ui/author-avatar";
 import { ArnsName } from "@/components/ui/arns-name";
@@ -108,9 +108,9 @@ const Dashboard = () => {
     Record<string, PompCampaignInfo>
   >({});
   const [loadingPomps, setLoadingPomps] = useState(false);
+  const [pompRefreshNonce, setPompRefreshNonce] = useState(0);
   const requestedStoriesRef = useRef(false);
   const requestedStoryPointsRef = useRef(false);
-  const requestedPompsRef = useRef(false);
 
   useEffect(() => {
     if (!requestedStoriesRef.current && stories.length === 0 && !loading) {
@@ -130,11 +130,16 @@ const Dashboard = () => {
   }, [getAllStoryPoints, allUsersStoryPoints]);
 
   useEffect(() => {
-    if (requestedPompsRef.current) return;
-    requestedPompsRef.current = true;
-    setLoadingPomps(true);
-    fetchDiscoverPomps(36)
-      .then(async (discovered) => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let attempt = 0;
+
+    const loadPomps = async () => {
+      if (cancelled) return;
+      setLoadingPomps(true);
+      try {
+        const discovered = await fetchDiscoverPomps(36);
+        if (cancelled) return;
         setPomps(discovered);
         const nativePomps = discovered
           .filter((pomp) => pomp.assetType === "native-event")
@@ -152,14 +157,28 @@ const Dashboard = () => {
           }
         }
         setPompCampaignStats(nextStats);
-      })
-      .catch((error) => {
+
+        if (discovered.length === 0 && attempt < 2) {
+          attempt += 1;
+          retryTimer = setTimeout(loadPomps, 5000);
+        }
+      } catch (error) {
         console.warn("Unable to load POMPs for discovery:", error);
-        setPomps([]);
-        setPompCampaignStats({});
-      })
-      .finally(() => setLoadingPomps(false));
-  }, []);
+        if (!cancelled && attempt < 2) {
+          attempt += 1;
+          retryTimer = setTimeout(loadPomps, 5000);
+        }
+      } finally {
+        if (!cancelled) setLoadingPomps(false);
+      }
+    };
+
+    loadPomps();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [pompRefreshNonce]);
 
   useEffect(() => {
     if (Object.keys(allUsersStoryPoints).length > 0) {
@@ -436,6 +455,16 @@ const Dashboard = () => {
               Create POMP
             </Button>
           </Link>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setPompRefreshNonce((value) => value + 1)}
+            disabled={loadingPomps}
+            className="gap-2 border-gray-700 bg-black/30 text-gray-200 hover:bg-gray-900"
+          >
+            <RefreshCw className={`h-4 w-4 ${loadingPomps ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </div>
 
         {loadingPomps ? (

@@ -67,11 +67,14 @@ export async function GET(request: NextRequest) {
       const pomps = edges
         .map((edge: any) => pompAssetFromGraphqlEdge(edge, owner))
         .filter(Boolean);
-      return NextResponse.json({
-        source: endpoint,
-        count: pomps.length,
-        pomps,
-      });
+      if (pomps.length > 0) {
+        return NextResponse.json({
+          source: endpoint,
+          count: pomps.length,
+          pomps,
+        });
+      }
+      lastError = `No POMPs indexed at ${endpoint}.`;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
