@@ -12,6 +12,7 @@ import { NetworkModeProvider } from "@/contexts/NetworkModeContext";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
 import "@/lib/debug-polyfill";
 import { Toaster } from "sonner";
+import { SiteFooter } from "@/components/ui/site-footer";
 
 // Force dynamic rendering for all pages – aoconnect uses `self` which is
 // unavailable during static prerendering in Node.js.
@@ -91,6 +92,7 @@ export default function RootLayout({
                         {children}
                       </div>
                     </main>
+                    <SiteFooter />
                     <DisclaimerPopup />
                     <Toaster position="top-right" />
                   </StoriesProcessProvider>
