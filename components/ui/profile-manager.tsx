@@ -10,12 +10,51 @@ import { Spinner } from "@/components/ui/spinner";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { FaUpload } from "react-icons/fa";
 import { toast } from "sonner";
-import { uploadToArweave, getArweaveUrl } from "@/lib/arweave";
+import { getArweaveUrl } from "@/lib/arweave";
 import { getPrimaryArn, getAllArns } from "@/lib/arns";
 
 interface ProfileManagerProps {
   onSave?: () => void;
   onCancel?: () => void;
+}
+
+const PROFILE_IMAGE_TARGET_BYTES = 96 * 1024;
+
+function fileToDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Unable to read image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function prepareProfileImage(file: File, type: "thumbnail" | "banner") {
+  if (file.size <= PROFILE_IMAGE_TARGET_BYTES) return fileToDataUrl(file);
+
+  const image = await createImageBitmap(file);
+  try {
+    const maxDimension = type === "thumbnail" ? 512 : 1600;
+    const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Unable to prepare profile image.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    for (const quality of [0.82, 0.68, 0.54, 0.4]) {
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/webp", quality)
+      );
+      if (blob && blob.size <= PROFILE_IMAGE_TARGET_BYTES) {
+        return fileToDataUrl(blob);
+      }
+    }
+    throw new Error("Please choose a smaller image (under 100 KB after compression).");
+  } finally {
+    image.close();
+  }
 }
 
 export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
@@ -94,30 +133,12 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
   const handleImageUpload = useCallback(async (file: File, type: "thumbnail" | "banner") => {
     try {
       setUploadingImage(type);
-      
-      // Create a data URL for immediate preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({
-          ...prev,
-          [type]: reader.result as string
-        }));
-      };
-      reader.readAsDataURL(file);
-      
-      // Upload to Arweave
-      const txId = await uploadToArweave(file, [
-        { name: 'Type', value: type },
-        { name: 'App-Name', value: 'PermaTell' }
-      ]);
-      
-      // Update the form data with the Arweave transaction ID
+      const dataUrl = await prepareProfileImage(file, type);
       setFormData(prev => ({
         ...prev,
-        [type]: txId
+        [type]: dataUrl
       }));
-      
-      toast.success(`${type === "thumbnail" ? "Profile picture" : "Banner"} uploaded successfully`);
+      toast.success(`${type === "thumbnail" ? "Profile picture" : "Banner"} ready for Arweave upload when you save the profile.`);
     } catch (error) {
       console.error("Error uploading image:", error);
       toast.error(`Failed to upload ${type === "thumbnail" ? "profile picture" : "banner"}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -299,14 +320,13 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
               >
                 <FaUpload className="h-3.5 w-3.5" />
                 {uploadingImage === "thumbnail"
-                  ? "Uploading..."
+                  ? "Preparing..."
                   : formData.thumbnail
                   ? "Replace Picture"
                   : "Upload Picture"}
               </Label>
               <p className="mt-2 text-xs text-gray-400">
-                Uploads to Arweave and saves the transaction id on your AO
-                profile.
+                The AO profile SDK uploads this image to Arweave when you save.
               </p>
             </div>
             {uploadingImage === "thumbnail" && (
@@ -351,7 +371,7 @@ export function ProfileManager({ onSave, onCancel }: ProfileManagerProps) {
               >
                 <FaUpload className="h-3.5 w-3.5" />
                 {uploadingImage === "banner"
-                  ? "Uploading..."
+                  ? "Preparing..."
                   : formData.banner
                   ? "Replace Banner"
                   : "Upload Banner"}
