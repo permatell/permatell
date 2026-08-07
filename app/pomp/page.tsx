@@ -15,7 +15,7 @@ import {
   createNativePompAtomicAsset,
   createPompAtomicAsset,
   fetchExistingPoapPompClaim,
-  fetchOwnedPoaps,
+  fetchOwnedPoapsPage,
   fetchPompCampaignInfo,
   fetchPompCampaignsByCreator,
   fetchPompAssetsByOwner,
@@ -209,6 +209,10 @@ export default function PompPage() {
   const [poaps, setPoaps] = useState<OwnedPoap[]>([]);
   const [selectedPoap, setSelectedPoap] = useState<OwnedPoap | null>(null);
   const [loadingPoaps, setLoadingPoaps] = useState(false);
+  const [loadingMorePoaps, setLoadingMorePoaps] = useState(false);
+  const [poapPage, setPoapPage] = useState(0);
+  const [poapTotalCount, setPoapTotalCount] = useState(0);
+  const [poapHasMore, setPoapHasMore] = useState(false);
   const [tokenId, setTokenId] = useState("");
   const [dropId, setDropId] = useState("");
   const [network, setNetwork] = useState<PoapNetworkKey>("gnosis");
@@ -484,20 +488,50 @@ export default function PompPage() {
         return;
       }
       setOwnerAddress(collector);
-      const owned = await fetchOwnedPoaps(collector);
-      setPoaps(owned);
-      if (owned.length === 0) {
+      const result = await fetchOwnedPoapsPage(collector, 1);
+      setPoaps(result.poaps);
+      setPoapPage(result.page);
+      setPoapTotalCount(result.totalCount);
+      setPoapHasMore(result.hasMore);
+      if (result.poaps.length === 0) {
         toast.message(
           `No POAPs found for ${collector.slice(0, 6)}...${collector.slice(-4)}. If this wallet should have POAPs, wait a moment and try again.`
         );
+      } else if (result.hasMore) {
+        toast.success(
+          `Loaded ${result.poaps.length} of ${result.totalCount} POAPs. Use "Load more" for the rest.`
+        );
       } else {
-        toast.success(`Loaded ${owned.length} POAPs.`);
+        toast.success(`Loaded ${result.poaps.length} POAPs.`);
       }
     } catch (error: any) {
       const message = error?.message || "Unable to load POAP collection.";
       toast.error(message);
     } finally {
       setLoadingPoaps(false);
+    }
+  };
+
+  const handleLoadMorePoaps = async () => {
+    const collector = activeOwner;
+    if (!collector || loadingPoaps || loadingMorePoaps || !poapHasMore) return;
+    setLoadingMorePoaps(true);
+    try {
+      const result = await fetchOwnedPoapsPage(collector, poapPage + 1);
+      setPoaps((current) => {
+        const seen = new Set(current.map((poap) => poap.id));
+        return [...current, ...result.poaps.filter((poap) => !seen.has(poap.id))];
+      });
+      setPoapPage(result.page);
+      setPoapTotalCount(result.totalCount);
+      setPoapHasMore(result.hasMore);
+      if (result.poaps.length === 0 && result.hasMore) {
+        toast.message("That page came back empty. Try loading more again.");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Unable to load more POAPs.");
+    } finally {
+      setLoadingMorePoaps(false);
     }
   };
 
@@ -1019,7 +1053,22 @@ export default function PompPage() {
           )}
 
           {isPoapMode && poaps.length > 0 ? (
-            <div className="grid max-h-[680px] grid-cols-1 gap-4 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
+                <span>
+                  Showing {poaps.length}
+                  {poapHasMore && poapTotalCount > poaps.length
+                    ? ` of ${poapTotalCount}`
+                    : ""}{" "}
+                  POAP{poaps.length === 1 ? "" : "s"}
+                </span>
+                {poapHasMore && (
+                  <span className="text-gray-500">
+                    Load more to reach the rest of this collection.
+                  </span>
+                )}
+              </div>
+              <div className="grid max-h-[680px] grid-cols-1 gap-4 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
               {poaps.map((poap) => {
                 const selected = selectedPoap?.id === poap.id;
                 return (
@@ -1064,6 +1113,22 @@ export default function PompPage() {
                   </button>
                 );
               })}
+              </div>
+              {poapHasMore && (
+                <Button
+                  type="button"
+                  onClick={handleLoadMorePoaps}
+                  disabled={loadingMorePoaps || loadingPoaps}
+                  className="w-full border border-emerald-400/40 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/20"
+                >
+                  {loadingMorePoaps
+                    ? "Loading more POAPs..."
+                    : `Load more (${Math.max(
+                        poapTotalCount - poaps.length,
+                        0
+                      )} remaining)`}
+                </Button>
+              )}
             </div>
           ) : isPoapMode ? (
             <div className="rounded-lg border border-gray-800 bg-black/30 p-8 text-center text-gray-400">

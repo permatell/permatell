@@ -271,6 +271,14 @@ export interface OwnedPoap {
   raw: unknown;
 }
 
+export interface OwnedPoapPage {
+  poaps: OwnedPoap[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  hasMore: boolean;
+}
+
 const POMP_GRAPHQL_ENDPOINTS = [
   process.env.NEXT_PUBLIC_AO_GQL_URL ||
     "https://ao-search-gateway.goldsky.com/graphql",
@@ -654,7 +662,8 @@ async function compressArtworkForBundling(file: File): Promise<File> {
 }
 
 const CLIENT_DISCOVERY_TTL_MS = 45_000;
-const ownedPoapCache = new TtlCache<OwnedPoap[]>(CLIENT_DISCOVERY_TTL_MS);
+export const OWNED_POAP_PAGE_SIZE = 50;
+const ownedPoapCache = new TtlCache<OwnedPoapPage>(CLIENT_DISCOVERY_TTL_MS);
 const discoverPompCache = new TtlCache<PompClaimedAsset[]>(CLIENT_DISCOVERY_TTL_MS);
 const campaignInfoCache = new TtlCache<PompCampaignInfo>(CLIENT_DISCOVERY_TTL_MS);
 
@@ -668,22 +677,45 @@ function throwDiscoveryError(response: Response, json: any, fallback: string): n
 }
 
 export async function fetchOwnedPoaps(address: string): Promise<OwnedPoap[]> {
+  const first = await fetchOwnedPoapsPage(address, 1, OWNED_POAP_PAGE_SIZE);
+  return first.poaps;
+}
+
+export async function fetchOwnedPoapsPage(
+  address: string,
+  page = 1,
+  pageSize = OWNED_POAP_PAGE_SIZE
+): Promise<OwnedPoapPage> {
   if (!isAddress(address)) {
     throw new Error("Connect or enter a valid EVM wallet address.");
   }
   const normalized = getAddress(address);
-  const cacheKey = `owned-poaps:${normalized.toLowerCase()}`;
+  const safePage = Math.max(1, Math.floor(page));
+  const safePageSize = Math.min(
+    OWNED_POAP_PAGE_SIZE,
+    Math.max(1, Math.floor(pageSize))
+  );
+  const cacheKey = `owned-poaps:${normalized.toLowerCase()}:${safePage}:${safePageSize}`;
 
   return ownedPoapCache.getOrLoad(cacheKey, async () => {
     const response = await fetch(
-      `/api/poap/collector?address=${encodeURIComponent(normalized)}`,
+      `/api/poap/collector?address=${encodeURIComponent(
+        normalized
+      )}&page=${safePage}&pageSize=${safePageSize}`,
       { cache: "no-store" }
     );
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
       throwDiscoveryError(response, json, "Unable to fetch POAP collection.");
     }
-    return Array.isArray(json?.poaps) ? json.poaps : [];
+    const poaps: OwnedPoap[] = Array.isArray(json?.poaps) ? json.poaps : [];
+    return {
+      poaps,
+      page: Number(json?.page) || safePage,
+      pageSize: Number(json?.pageSize) || safePageSize,
+      totalCount: Number(json?.totalCount) || poaps.length,
+      hasMore: Boolean(json?.hasMore),
+    };
   });
 }
 

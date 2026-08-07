@@ -83,9 +83,12 @@ export default function PoapArchivePage() {
     setVerification(null);
     setOwnedPoap(null);
     setTokenId("");
-    fetch(`/api/poap/collector?address=${encodeURIComponent(evmAddress)}`, {
-      cache: "no-store",
-    })
+    fetch(
+      `/api/poap/collector?address=${encodeURIComponent(
+        evmAddress
+      )}&dropId=${encodeURIComponent(selected.dropId)}`,
+      { cache: "no-store" }
+    )
       .then(async (response) => {
         const json = await response.json().catch(() => ({}));
         if (!response.ok) {

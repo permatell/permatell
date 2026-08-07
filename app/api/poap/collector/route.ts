@@ -13,11 +13,27 @@ export const runtime = "nodejs";
 
 const POAP_API_BASE = process.env.POAP_API_BASE || "https://api.poap.tech";
 const POAP_CONTRACT_ADDRESS = "0x22C1f6050E56d2876009903609a2cC3fEf83B415";
-const MAX_ONCHAIN_TOKENS_PER_NETWORK = 120;
+const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 50;
 const RPC_TIMEOUT_MS = 12_000;
 const METADATA_TIMEOUT_MS = 5_000;
 const ARCHIVE_ENRICH_TIMEOUT_MS = 8_000;
 const COLLECTOR_CACHE_TTL_MS = 60_000;
+/**
+ * Page offsets are derived from per-network balances, so the balances have to
+ * stay fixed for the duration of a paging session or pages would shift and
+ * duplicate/skip rows. Cache the layout for longer than a page response.
+ */
+const LAYOUT_CACHE_TTL_MS = 5 * 60_000;
+const SCAN_CACHE_TTL_MS = 5 * 60_000;
+/** Keep RPC batches small enough for public endpoints to accept them. */
+const MULTICALL_BATCH_SIZE = 150;
+/** Bound outbound requests per page so paging cannot flood RPCs into 429s. */
+const RPC_CONCURRENCY = 4;
+const METADATA_CONCURRENCY = 8;
+/** Upper bound on index scanning when resolving a single drop in a wallet. */
+const DROP_SCAN_MAX_INDICES = 6_000;
 
 async function withTimeout<T>(
   promise: Promise<T>,
@@ -148,12 +164,17 @@ interface NormalizedPoap {
 type CollectorPayload = {
   address: string;
   count: number;
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
+  hasMore?: boolean;
+  failedNetworks?: string[];
   source: string;
-  truncatedPerNetworkAt?: number;
   poaps: NormalizedPoap[];
 };
 
 const collectorCache = new TtlCache<CollectorPayload>(COLLECTOR_CACHE_TTL_MS);
+const scanCache = new TtlCache<NormalizedPoap[]>(SCAN_CACHE_TTL_MS);
 
 function pickString(source: any, keys: string[]): string {
   for (const key of keys) {
@@ -191,7 +212,190 @@ function poapChain(network: PoapNetworkConfig): Chain {
     blockExplorers: {
       default: { name: network.label, url: network.explorerUrl },
     },
+    contracts: {
+      multicall3: { address: MULTICALL3_ADDRESS },
+    },
   };
+}
+
+type PoapClient = ReturnType<typeof createPublicClient>;
+
+function poapClient(network: PoapNetworkConfig): PoapClient {
+  return createPublicClient({
+    chain: poapChain(network),
+    transport: http(network.rpcUrl, {
+      timeout: RPC_TIMEOUT_MS,
+      retryCount: 1,
+    }),
+  });
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    out.push(items.slice(index, index + size));
+  }
+  return out;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const runners = Array.from(
+    { length: Math.max(1, Math.min(limit, items.length)) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        results[index] = await worker(items[index], index);
+      }
+    }
+  );
+  await Promise.all(runners);
+  return results;
+}
+
+type TokenRef = { index: number; tokenId: string; dropId: string };
+
+/**
+ * Reads `tokenDetailsOfOwnerByIndex` for a contiguous index range. Uses
+ * Multicall3 so a 50-item page costs a couple of RPC round trips instead of
+ * one per token, and degrades to individual reads if a chain rejects the batch.
+ */
+async function readTokenRefs(
+  client: PoapClient,
+  owner: `0x${string}`,
+  startIndex: number,
+  count: number
+): Promise<TokenRef[]> {
+  if (count <= 0) return [];
+  const indexes = Array.from({ length: count }, (_, offset) => startIndex + offset);
+  const batches = chunk(indexes, MULTICALL_BATCH_SIZE);
+
+  const batchResults = await mapWithConcurrency(
+    batches,
+    RPC_CONCURRENCY,
+    async (batch): Promise<TokenRef[]> => {
+      const contracts = batch.map((index) => ({
+        address: POAP_CONTRACT_ADDRESS as `0x${string}`,
+        abi: poapAbi,
+        functionName: "tokenDetailsOfOwnerByIndex" as const,
+        args: [owner, BigInt(index)] as const,
+      }));
+
+      try {
+        const rows = await client.multicall({ contracts, allowFailure: true });
+        return rows.flatMap((row, offset) => {
+          if (row.status !== "success" || !row.result) return [];
+          const [tokenId, dropId] = row.result as readonly [bigint, bigint];
+          return [
+            {
+              index: batch[offset],
+              tokenId: tokenId.toString(),
+              dropId: dropId.toString(),
+            },
+          ];
+        });
+      } catch {
+        // Multicall3 missing or batch rejected: fall back to single reads.
+        const rows = await mapWithConcurrency(
+          batch,
+          RPC_CONCURRENCY,
+          async (index): Promise<TokenRef | null> => {
+            try {
+              const details = await client.readContract({
+                address: POAP_CONTRACT_ADDRESS,
+                abi: poapAbi,
+                functionName: "tokenDetailsOfOwnerByIndex",
+                args: [owner, BigInt(index)],
+              });
+              return {
+                index,
+                tokenId: details[0].toString(),
+                dropId: details[1].toString(),
+              };
+            } catch {
+              return null;
+            }
+          }
+        );
+        return rows.filter((row): row is TokenRef => row !== null);
+      }
+    }
+  );
+
+  return batchResults.flat().sort((a, b) => a.index - b.index);
+}
+
+async function readTokenUris(
+  client: PoapClient,
+  tokenIds: string[]
+): Promise<string[]> {
+  if (!tokenIds.length) return [];
+  const batches = chunk(tokenIds, MULTICALL_BATCH_SIZE);
+  const batchResults = await mapWithConcurrency(
+    batches,
+    RPC_CONCURRENCY,
+    async (batch): Promise<string[]> => {
+      const contracts = batch.map((tokenId) => ({
+        address: POAP_CONTRACT_ADDRESS as `0x${string}`,
+        abi: poapAbi,
+        functionName: "tokenURI" as const,
+        args: [BigInt(tokenId)] as const,
+      }));
+      try {
+        const rows = await client.multicall({ contracts, allowFailure: true });
+        return rows.map((row) =>
+          row.status === "success" ? String(row.result ?? "") : ""
+        );
+      } catch {
+        return mapWithConcurrency(batch, RPC_CONCURRENCY, async (tokenId) => {
+          try {
+            return await client.readContract({
+              address: POAP_CONTRACT_ADDRESS,
+              abi: poapAbi,
+              functionName: "tokenURI",
+              args: [BigInt(tokenId)],
+            });
+          } catch {
+            return "";
+          }
+        });
+      }
+    }
+  );
+  return batchResults.flat();
+}
+
+async function hydrateTokenRefs(
+  network: PoapNetworkConfig,
+  client: PoapClient,
+  owner: `0x${string}`,
+  refs: TokenRef[]
+): Promise<NormalizedPoap[]> {
+  if (!refs.length) return [];
+  const tokenUris = await readTokenUris(
+    client,
+    refs.map((ref) => ref.tokenId)
+  );
+  const metadata = await mapWithConcurrency(
+    tokenUris,
+    METADATA_CONCURRENCY,
+    (uri) => fetchTokenMetadata(uri)
+  );
+  return refs.map((ref, offset) =>
+    normalizeMetadataPoap(
+      network,
+      owner,
+      ref.tokenId,
+      ref.dropId,
+      metadata[offset],
+      tokenUris[offset] || ""
+    )
+  );
 }
 
 function normalizeMetadataUrl(value: string): string {
@@ -324,87 +528,189 @@ function normalizeMetadataPoap(
   };
 }
 
-async function fetchOnchainPoapsForNetwork(
-  address: string,
-  network: PoapNetworkConfig
-): Promise<NormalizedPoap[]> {
-  const client = createPublicClient({
-    chain: poapChain(network),
-    transport: http(network.rpcUrl, {
-      timeout: RPC_TIMEOUT_MS,
-      retryCount: 1,
-    }),
-  });
+/**
+ * Per-network balances for one wallet. The global POAP ordering is the fixed
+ * `POAP_NETWORKS` order, and within each network the on-chain owner index
+ * 0..balance-1, so a page maps to the same rows on every request as long as
+ * this layout is stable. Failed networks stay in the layout with a count of 0
+ * so a transient RPC error cannot shift the offsets of later networks.
+ */
+type CollectionLayout = {
+  counts: number[];
+  totalCount: number;
+  failedNetworks: string[];
+  succeededNetworks: number;
+};
 
+const layoutCache = new TtlCache<CollectionLayout>(LAYOUT_CACHE_TTL_MS);
+
+async function getCollectionLayout(address: string): Promise<CollectionLayout> {
   const owner = getAddress(address);
-  const balance = await client.readContract({
-    address: POAP_CONTRACT_ADDRESS,
-    abi: poapAbi,
-    functionName: "balanceOf",
-    args: [owner],
-  });
-  const count = Math.min(Number(balance), MAX_ONCHAIN_TOKENS_PER_NETWORK);
-  if (!count) return [];
+  const cacheKey = `layout:${owner.toLowerCase()}`;
+  const cached = layoutCache.get(cacheKey);
+  if (cached) return cached;
 
-  const rows = await Promise.allSettled(
-    Array.from({ length: count }, async (_, index) => {
-      const details = await client.readContract({
+  const balances = await Promise.allSettled(
+    POAP_NETWORKS.map(async (network) => {
+      const balance = await poapClient(network).readContract({
         address: POAP_CONTRACT_ADDRESS,
         abi: poapAbi,
-        functionName: "tokenDetailsOfOwnerByIndex",
-        args: [owner, BigInt(index)],
+        functionName: "balanceOf",
+        args: [owner],
       });
-      const tokenId = details[0].toString();
-      const dropId = details[1].toString();
-      const tokenUri = await client.readContract({
-        address: POAP_CONTRACT_ADDRESS,
-        abi: poapAbi,
-        functionName: "tokenURI",
-        args: [BigInt(tokenId)],
-      });
-      const metadata = await fetchTokenMetadata(tokenUri);
-      return normalizeMetadataPoap(
-        network,
-        owner,
-        tokenId,
-        dropId,
-        metadata,
-        tokenUri
-      );
+      return Number(balance);
     })
   );
 
-  return rows
-    .filter(
-      (row): row is PromiseFulfilledResult<NormalizedPoap> =>
-        row.status === "fulfilled"
-    )
-    .map((row) => row.value);
-}
-
-async function fetchOnchainPoaps(address: string): Promise<{
-  poaps: NormalizedPoap[];
-  failedNetworks: string[];
-  succeededNetworks: number;
-}> {
-  const results = await Promise.allSettled(
-    POAP_NETWORKS.map((network) => fetchOnchainPoapsForNetwork(address, network))
-  );
-  const poaps: NormalizedPoap[] = [];
+  const counts: number[] = [];
   const failedNetworks: string[] = [];
   let succeededNetworks = 0;
-
-  results.forEach((result, index) => {
-    const network = POAP_NETWORKS[index];
-    if (result.status === "fulfilled") {
+  balances.forEach((result, index) => {
+    if (result.status === "fulfilled" && Number.isFinite(result.value)) {
+      counts.push(Math.max(0, result.value));
       succeededNetworks += 1;
-      poaps.push(...result.value);
     } else {
-      failedNetworks.push(network.key);
+      counts.push(0);
+      failedNetworks.push(POAP_NETWORKS[index].key);
     }
   });
 
-  return { poaps, failedNetworks, succeededNetworks };
+  const layout: CollectionLayout = {
+    counts,
+    totalCount: counts.reduce((sum, value) => sum + value, 0),
+    failedNetworks,
+    succeededNetworks,
+  };
+
+  // Only pin a layout that we actually managed to read, otherwise a total RPC
+  // outage would be cached as "this wallet has no POAPs" for five minutes.
+  if (succeededNetworks > 0) layoutCache.set(cacheKey, layout);
+  return layout;
+}
+
+type PageSlice = {
+  network: PoapNetworkConfig;
+  startIndex: number;
+  count: number;
+};
+
+function planPageSlices(
+  layout: CollectionLayout,
+  page: number,
+  pageSize: number
+): PageSlice[] {
+  const pageStart = (page - 1) * pageSize;
+  const pageEnd = pageStart + pageSize;
+  const slices: PageSlice[] = [];
+  let offset = 0;
+
+  POAP_NETWORKS.forEach((network, index) => {
+    const networkTotal = layout.counts[index] ?? 0;
+    const start = Math.max(0, pageStart - offset);
+    const end = Math.min(networkTotal, pageEnd - offset);
+    if (start < end) {
+      slices.push({ network, startIndex: start, count: end - start });
+    }
+    offset += networkTotal;
+  });
+
+  return slices;
+}
+
+async function fetchOnchainPoaps(
+  address: string,
+  page: number,
+  pageSize: number
+): Promise<{
+  poaps: NormalizedPoap[];
+  failedNetworks: string[];
+  succeededNetworks: number;
+  totalCount: number;
+  hasMore: boolean;
+}> {
+  const owner = getAddress(address);
+  const layout = await getCollectionLayout(owner);
+  const slices = planPageSlices(layout, page, pageSize);
+
+  // Slices run sequentially: a page rarely spans more than one network, and
+  // serial networks keep concurrent RPC load bounded by RPC_CONCURRENCY.
+  const pages: NormalizedPoap[][] = [];
+  for (const slice of slices) {
+    const client = poapClient(slice.network);
+    try {
+      const refs = await readTokenRefs(
+        client,
+        owner,
+        slice.startIndex,
+        slice.count
+      );
+      pages.push(await hydrateTokenRefs(slice.network, client, owner, refs));
+    } catch {
+      pages.push([]);
+    }
+  }
+
+  return {
+    poaps: pages.flat(),
+    failedNetworks: layout.failedNetworks,
+    succeededNetworks: layout.succeededNetworks,
+    totalCount: layout.totalCount,
+    hasMore: page * pageSize < layout.totalCount,
+  };
+}
+
+/**
+ * Resolves a single drop inside a wallet without paging through it. Only the
+ * cheap `tokenDetailsOfOwnerByIndex` read is batched across the collection,
+ * and the scan stops at the first match.
+ */
+async function findOnchainPoapByDrop(
+  address: string,
+  dropId: string
+): Promise<{
+  poap: NormalizedPoap | null;
+  layout: CollectionLayout;
+  scanTruncated: boolean;
+}> {
+  const owner = getAddress(address);
+  const layout = await getCollectionLayout(owner);
+  let scanned = 0;
+  let scanTruncated = false;
+
+  for (const [index, network] of POAP_NETWORKS.entries()) {
+    const networkTotal = layout.counts[index] ?? 0;
+    if (!networkTotal) continue;
+    const client = poapClient(network);
+
+    for (let start = 0; start < networkTotal; start += MULTICALL_BATCH_SIZE) {
+      if (scanned >= DROP_SCAN_MAX_INDICES) {
+        scanTruncated = true;
+        break;
+      }
+      const count = Math.min(
+        MULTICALL_BATCH_SIZE,
+        networkTotal - start,
+        DROP_SCAN_MAX_INDICES - scanned
+      );
+      scanned += count;
+
+      let refs: TokenRef[] = [];
+      try {
+        refs = await readTokenRefs(client, owner, start, count);
+      } catch {
+        continue;
+      }
+
+      const match = refs.find((ref) => ref.dropId === dropId);
+      if (match) {
+        const [poap] = await hydrateTokenRefs(network, client, owner, [match]);
+        return { poap: poap ?? null, layout, scanTruncated };
+      }
+    }
+    if (scanTruncated) break;
+  }
+
+  return { poap: null, layout, scanTruncated };
 }
 
 function normalizePoap(raw: any): NormalizedPoap {
@@ -521,6 +827,78 @@ async function enrichPoapsWithArchive(
   return Promise.all(poaps.map(enrichWithPoapArchive));
 }
 
+function numericKey(value: string): bigint {
+  try {
+    return /^\d+$/.test(value) ? BigInt(value) : BigInt(0);
+  } catch {
+    return BigInt(0);
+  }
+}
+
+/**
+ * The POAP API does not guarantee a stable order, so impose one before slicing
+ * pages. Without this, page 2 could repeat or skip rows from page 1.
+ */
+function sortForStablePaging(poaps: NormalizedPoap[]): NormalizedPoap[] {
+  return [...poaps].sort((a, b) => {
+    if (a.network !== b.network) return a.network < b.network ? -1 : 1;
+    const dropDiff = numericKey(a.dropId) - numericKey(b.dropId);
+    if (dropDiff !== BigInt(0)) return dropDiff < BigInt(0) ? -1 : 1;
+    const tokenDiff = numericKey(a.tokenId) - numericKey(b.tokenId);
+    if (tokenDiff !== BigInt(0)) return tokenDiff < BigInt(0) ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
+/**
+ * Slices the cached POAP API scan before archive enrichment so a wallet with
+ * thousands of POAPs only pays enrichment cost for the requested page.
+ */
+async function buildApiPayload(
+  address: string,
+  scanned: NormalizedPoap[],
+  page: number,
+  pageSize: number,
+  dropId: string
+): Promise<CollectorPayload> {
+  if (dropId) {
+    const matches = scanned.filter((poap) => poap.dropId === dropId);
+    const poaps = await withTimeout(
+      enrichPoapsWithArchive(matches.slice(0, pageSize)),
+      ARCHIVE_ENRICH_TIMEOUT_MS,
+      matches.slice(0, pageSize)
+    );
+    return {
+      address,
+      count: poaps.length,
+      totalCount: scanned.length,
+      page: 1,
+      pageSize,
+      hasMore: false,
+      source: "poap-api-drop-lookup",
+      poaps,
+    };
+  }
+
+  const pageStart = (page - 1) * pageSize;
+  const slice = scanned.slice(pageStart, pageStart + pageSize);
+  const poaps = await withTimeout(
+    enrichPoapsWithArchive(slice),
+    ARCHIVE_ENRICH_TIMEOUT_MS,
+    slice
+  );
+  return {
+    address,
+    count: poaps.length,
+    totalCount: scanned.length,
+    page,
+    pageSize,
+    hasMore: pageStart + pageSize < scanned.length,
+    source: "poap-api+archive-fallback",
+    poaps,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const addressParam = request.nextUrl.searchParams.get("address") || "";
   if (!isAddress(addressParam)) {
@@ -530,7 +908,23 @@ export async function GET(request: NextRequest) {
     );
   }
   const address = getAddress(addressParam);
-  const cacheKey = `poap:${address.toLowerCase()}`;
+  const page = Math.max(
+    1,
+    Number(request.nextUrl.searchParams.get("page") || "1") || 1
+  );
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(
+      1,
+      Number(
+        request.nextUrl.searchParams.get("pageSize") || DEFAULT_PAGE_SIZE
+      ) || DEFAULT_PAGE_SIZE
+    )
+  );
+  const dropId = (request.nextUrl.searchParams.get("dropId") || "").trim();
+  const cacheKey = dropId
+    ? `poap:${address.toLowerCase()}:drop:${dropId}`
+    : `poap:${address.toLowerCase()}:${page}:${pageSize}`;
   const cached = collectorCache.get(cacheKey);
   if (cached) {
     return NextResponse.json(cached, {
@@ -547,8 +941,45 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(payload);
   };
 
-  if (!apiKey && !bearer) {
-    const onchain = await fetchOnchainPoaps(address);
+  const noApiCredentials = !apiKey && !bearer;
+
+  // Targeted single-drop lookup, used by the archive flow. Scanning by index is
+  // far cheaper than paging the whole wallet just to find one token.
+  if (dropId && noApiCredentials) {
+    const found = await findOnchainPoapByDrop(address, dropId);
+    if (found.layout.succeededNetworks === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Unable to read on-chain POAPs from any network. RPCs may be rate-limited or unreachable. Try again shortly.",
+          failedNetworks: found.layout.failedNetworks,
+        },
+        { status: 502 }
+      );
+    }
+    const matches = found.poap ? [found.poap] : [];
+    const poaps = await withTimeout(
+      enrichPoapsWithArchive(matches),
+      ARCHIVE_ENRICH_TIMEOUT_MS,
+      matches
+    );
+    return respond({
+      address,
+      count: poaps.length,
+      totalCount: found.layout.totalCount,
+      page: 1,
+      pageSize,
+      hasMore: false,
+      failedNetworks: found.layout.failedNetworks,
+      source: found.scanTruncated
+        ? "onchain-drop-lookup-truncated"
+        : "onchain-drop-lookup",
+      poaps,
+    });
+  }
+
+  if (noApiCredentials) {
+    const onchain = await fetchOnchainPoaps(address, page, pageSize);
     if (onchain.succeededNetworks === 0) {
       return NextResponse.json(
         {
@@ -567,8 +998,12 @@ export async function GET(request: NextRequest) {
     return respond({
       address,
       count: poaps.length,
+      totalCount: onchain.totalCount,
+      page,
+      pageSize,
+      hasMore: onchain.hasMore,
+      failedNetworks: onchain.failedNetworks,
       source: "onchain+archive-fallback",
-      truncatedPerNetworkAt: MAX_ONCHAIN_TOKENS_PER_NETWORK,
       poaps,
     });
   }
@@ -578,6 +1013,14 @@ export async function GET(request: NextRequest) {
   };
   if (apiKey) headers["x-api-key"] = apiKey;
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
+
+  const scanCacheKey = `scan:${address.toLowerCase()}`;
+  const cachedScan = scanCache.get(scanCacheKey);
+  if (cachedScan) {
+    return respond(
+      await buildApiPayload(address, cachedScan, page, pageSize, dropId)
+    );
+  }
 
   const url = `${POAP_API_BASE.replace(/\/+$/, "")}/actions/scan/${address}`;
   const response = await fetch(url, {
@@ -591,7 +1034,29 @@ export async function GET(request: NextRequest) {
     // Prefer a partial on-chain answer over a hard failure when the API is
     // rate-limited or temporarily unavailable.
     if (isRateLimitStatus(response.status) || response.status >= 500) {
-      const onchain = await fetchOnchainPoaps(address);
+      if (dropId) {
+        const found = await findOnchainPoapByDrop(address, dropId);
+        if (found.layout.succeededNetworks > 0) {
+          const matches = found.poap ? [found.poap] : [];
+          const poaps = await withTimeout(
+            enrichPoapsWithArchive(matches),
+            ARCHIVE_ENRICH_TIMEOUT_MS,
+            matches
+          );
+          return respond({
+            address,
+            count: poaps.length,
+            totalCount: found.layout.totalCount,
+            page: 1,
+            pageSize,
+            hasMore: false,
+            failedNetworks: found.layout.failedNetworks,
+            source: "onchain-drop-lookup-after-poap-api-error",
+            poaps,
+          });
+        }
+      }
+      const onchain = await fetchOnchainPoaps(address, page, pageSize);
       if (onchain.poaps.length > 0 || onchain.succeededNetworks > 0) {
         const poaps = await withTimeout(
           enrichPoapsWithArchive(onchain.poaps),
@@ -601,8 +1066,12 @@ export async function GET(request: NextRequest) {
         return respond({
           address,
           count: poaps.length,
+          totalCount: onchain.totalCount,
+          page,
+          pageSize,
+          hasMore: onchain.hasMore,
+          failedNetworks: onchain.failedNetworks,
           source: "onchain-fallback-after-poap-api-error",
-          truncatedPerNetworkAt: MAX_ONCHAIN_TOKENS_PER_NETWORK,
           poaps,
         });
       }
@@ -651,15 +1120,9 @@ export async function GET(request: NextRequest) {
     ? (parsed as any).data
     : [];
 
-  const normalized = items.map(normalizePoap);
-  return respond({
-    address,
-    count: items.length,
-    source: "poap-api+archive-fallback",
-    poaps: await withTimeout(
-      enrichPoapsWithArchive(normalized),
-      ARCHIVE_ENRICH_TIMEOUT_MS,
-      normalized
-    ),
-  });
+  const normalized = sortForStablePaging(items.map(normalizePoap));
+  scanCache.set(scanCacheKey, normalized);
+  return respond(
+    await buildApiPayload(address, normalized, page, pageSize, dropId)
+  );
 }
