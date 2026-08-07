@@ -91,6 +91,19 @@ interface PoapNetworkConfig {
   explorerUrl: string;
 }
 
+/**
+ * Discovery is limited to the POAP deployments that implement
+ * ERC721Enumerable. POAP is deployed at the same address on Polygon, Base,
+ * Arbitrum, Linea and Celo, but those contracts report
+ * `supportsInterface(0x780e9d63) === false` and revert on both
+ * `tokenOfOwnerByIndex` and `tokenDetailsOfOwnerByIndex`, so a wallet's tokens
+ * there cannot be listed by index. Including them only inflated `balanceOf`
+ * totals with rows that could never load.
+ *
+ * This list is discovery-only. Ownership verification and claiming still
+ * support every network in `POAP_NETWORKS` in `lib/pomp.ts`, because those
+ * paths use `ownerOf`/`tokenEvent`, which work without enumeration.
+ */
 const POAP_NETWORKS: PoapNetworkConfig[] = [
   {
     key: "gnosis",
@@ -106,42 +119,15 @@ const POAP_NETWORKS: PoapNetworkConfig[] = [
     rpcUrl: "https://ethereum-rpc.publicnode.com",
     explorerUrl: "https://etherscan.io",
   },
-  {
-    key: "polygon",
-    label: "Polygon",
-    chainId: 137,
-    rpcUrl: "https://polygon-rpc.com",
-    explorerUrl: "https://polygonscan.com",
-  },
-  {
-    key: "base",
-    label: "Base",
-    chainId: 8453,
-    rpcUrl: "https://mainnet.base.org",
-    explorerUrl: "https://basescan.org",
-  },
-  {
-    key: "arbitrum",
-    label: "Arbitrum",
-    chainId: 42161,
-    rpcUrl: "https://arb1.arbitrum.io/rpc",
-    explorerUrl: "https://arbiscan.io",
-  },
-  {
-    key: "linea",
-    label: "Linea",
-    chainId: 59144,
-    rpcUrl: "https://rpc.linea.build",
-    explorerUrl: "https://lineascan.build",
-  },
-  {
-    key: "celo",
-    label: "Celo",
-    chainId: 42220,
-    rpcUrl: "https://forno.celo.org",
-    explorerUrl: "https://celoscan.io",
-  },
 ];
+
+/**
+ * Page offsets are derived from the position of each network in this list, so
+ * a cached layout built from a different list would shift every offset after
+ * the changed entry. Namespacing the cache keys makes stale entries
+ * unreachable instead of silently wrong.
+ */
+const NETWORK_SIGNATURE = POAP_NETWORKS.map((network) => network.key).join("-");
 
 interface NormalizedPoap {
   id: string;
@@ -546,7 +532,7 @@ const layoutCache = new TtlCache<CollectionLayout>(LAYOUT_CACHE_TTL_MS);
 
 async function getCollectionLayout(address: string): Promise<CollectionLayout> {
   const owner = getAddress(address);
-  const cacheKey = `layout:${owner.toLowerCase()}`;
+  const cacheKey = `layout:${NETWORK_SIGNATURE}:${owner.toLowerCase()}`;
   const cached = layoutCache.get(cacheKey);
   if (cached) return cached;
 
@@ -923,8 +909,8 @@ export async function GET(request: NextRequest) {
   );
   const dropId = (request.nextUrl.searchParams.get("dropId") || "").trim();
   const cacheKey = dropId
-    ? `poap:${address.toLowerCase()}:drop:${dropId}`
-    : `poap:${address.toLowerCase()}:${page}:${pageSize}`;
+    ? `poap:${NETWORK_SIGNATURE}:${address.toLowerCase()}:drop:${dropId}`
+    : `poap:${NETWORK_SIGNATURE}:${address.toLowerCase()}:${page}:${pageSize}`;
   const cached = collectorCache.get(cacheKey);
   if (cached) {
     return NextResponse.json(cached, {
@@ -1014,7 +1000,7 @@ export async function GET(request: NextRequest) {
   if (apiKey) headers["x-api-key"] = apiKey;
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
 
-  const scanCacheKey = `scan:${address.toLowerCase()}`;
+  const scanCacheKey = `scan:${NETWORK_SIGNATURE}:${address.toLowerCase()}`;
   const cachedScan = scanCache.get(scanCacheKey);
   if (cachedScan) {
     return respond(
