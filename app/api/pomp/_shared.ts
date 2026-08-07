@@ -1,4 +1,5 @@
 import { dryrun } from "@permaweb/aoconnect";
+import { ReferenceClient } from "@permaweb/references";
 
 export const POMP_APP_NAME = "PermaTell";
 export const POMP_TYPE = "POMP";
@@ -24,6 +25,12 @@ const CU_ENDPOINTS = [
   process.env.NEXT_PUBLIC_AO_CU_URL,
   "https://forward.computer",
 ].filter(Boolean) as string[];
+
+const referenceClient = new ReferenceClient({
+  gateway: "https://arweave.net",
+  graphql: "https://arweave.net/graphql",
+  namespace: null,
+});
 
 export interface PompAsset {
   assetId: string;
@@ -58,7 +65,7 @@ export interface PompCampaignInfo {
   claimed: number;
   remaining: number;
   ownerBalance: string;
-  source: "dryrun" | "gateway";
+  source: "hyperbeam" | "dryrun" | "gateway";
 }
 
 export interface PompAssetDetail extends PompAsset {
@@ -201,8 +208,13 @@ export function tagsToRecord(
 }
 
 export function parseCampaignPayload(value: any): Omit<PompCampaignInfo, "source"> | null {
-  const asset = typeof value?.asset === "string" ? safeJson(value.asset) : value?.asset;
-  const source = asset || value;
+  const decodedValue =
+    typeof value === "string" ? safeJson(value) : value;
+  const asset =
+    typeof decodedValue?.asset === "string"
+      ? safeJson(decodedValue.asset)
+      : decodedValue?.asset;
+  const source = asset || decodedValue;
   const config = source?.POMPCampaignConfig || source?.config;
   const claims = source?.POMPClaims || source?.claims || {};
   if (!config && !source?.claimed && !source?.remaining) return null;
@@ -223,6 +235,51 @@ export function parseCampaignPayload(value: any): Omit<PompCampaignInfo, "source
     remaining,
     ownerBalance: String(source?.ownerBalance || ""),
   };
+}
+
+const HYPERBEAM_CAMPAIGN_TIMEOUT_MS = 3_000;
+
+async function fetchPompCampaignFromHyperbeam(
+  id: string
+): Promise<Omit<PompCampaignInfo, "source"> | null> {
+  const configuredNode =
+    process.env.NEXT_PUBLIC_HYPERBEAM_URL || "https://arweave.nyc";
+  const node = configuredNode.replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    HYPERBEAM_CAMPAIGN_TIMEOUT_MS
+  );
+
+  // POMP processes publish their read model under the `asset` patch key.
+  // The broader compute response is retained as a compatibility attempt for
+  // processes created before that convention was introduced.
+  const urls = [
+    `${node}/${id}~process@1.0/compute/asset`,
+    `${node}/${id}~process@1.0/compute`,
+  ];
+
+  try {
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, {
+          signal: controller.signal,
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) continue;
+        const body = await response.text();
+        const parsed = parseCampaignPayload(body);
+        if (parsed) return parsed;
+      } catch {
+        // Try the next HyperBEAM path, then let the legacy fallback run.
+      }
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return null;
 }
 
 export function safeJson(value: string): any {
@@ -256,6 +313,40 @@ async function fetchJsonFromGateways(id: string): Promise<Record<string, any>> {
   }
   console.warn("[pomp-detail] gateway metadata missing", { assetId: id });
   return {};
+}
+
+function referenceTargetId(value: unknown): string | null {
+  if (typeof value === "string") return normalizeAoId(value);
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  return normalizeAoId(
+    record.target || record.value || record.txId || record.id || record.data
+  );
+}
+
+async function resolvePompReference(value: string): Promise<{
+  targetId?: string;
+  metadata?: Record<string, any>;
+}> {
+  const referenceId = normalizeAoId(value);
+  if (!referenceId) return {};
+
+  try {
+    const resolved = await referenceClient.resolveReference(referenceId);
+    const targetId = referenceTargetId(resolved);
+    if (!targetId) {
+      return resolved && typeof resolved === "object"
+        ? { metadata: resolved as Record<string, any> }
+        : {};
+    }
+    return { targetId };
+  } catch (error) {
+    console.warn("[pomp-detail] reference resolution failed", {
+      referenceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
 }
 
 export async function fetchPompAssetDetail(
@@ -308,7 +399,26 @@ export async function fetchPompAssetDetail(
     }
   }
 
-  const metadata = await fetchJsonFromGateways(id);
+  let metadata = await fetchJsonFromGateways(id);
+  const metadataReference = firstText(
+    tags["POMP-Metadata-Reference"],
+    tags["Metadata-Reference"],
+    tags.Reference
+  );
+  const artworkReference = firstText(
+    tags["POMP-Artwork-Reference"],
+    tags["Artwork-Reference"]
+  );
+
+  if (metadataReference) {
+    const resolved = await resolvePompReference(metadataReference);
+    if (resolved.metadata) {
+      metadata = { ...resolved.metadata, ...metadata };
+    } else if (resolved.targetId && resolved.targetId !== id) {
+      const referencedMetadata = await fetchJsonFromGateways(resolved.targetId);
+      metadata = { ...referencedMetadata, ...metadata };
+    }
+  }
   const campaign = await fetchPompCampaignInfo(id);
   const fields = extractAssetFields(metadata);
   const { drop, source, claim, campaignConfig } = fields;
@@ -341,9 +451,13 @@ export async function fetchPompAssetDetail(
       fields.metadata?.sourceProtocol,
       asset?.sourceProtocol
     ) || "";
+  const resolvedArtwork = artworkReference
+    ? await resolvePompReference(artworkReference)
+    : {};
   const artworkId = firstAoId(
     tags["POMP-Artwork"],
     tags.Artwork,
+    resolvedArtwork.targetId,
     drop?.artworkId,
     fields.metadata?.artworkId,
     fields.payload?.Artwork,
@@ -499,6 +613,15 @@ export async function fetchPompCampaignInfo(
 ): Promise<PompCampaignInfo | null> {
   const id = normalizeAoId(assetId);
   if (!id) return null;
+
+  try {
+    const hyperbeam = await fetchPompCampaignFromHyperbeam(id);
+    if (hyperbeam) {
+      return { ...hyperbeam, assetId: hyperbeam.assetId || id, source: "hyperbeam" };
+    }
+  } catch {
+    // HyperBEAM is preferred, but it must never prevent legacy POMPs loading.
+  }
 
   for (const cu of CU_ENDPOINTS) {
     try {

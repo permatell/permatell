@@ -6,8 +6,10 @@ import React, {
   useState,
   useCallback,
   useEffect,
+  useRef,
 } from "react";
 import { ethers } from "ethers";
+import { EthereumProvider } from "@walletconnect/ethereum-provider";
 import { FEATURES } from "@/lib/ao-config";
 
 // ---------------------------------------------------------------------------
@@ -156,6 +158,9 @@ export function EvmWalletProvider({ children }: { children: React.ReactNode }) {
   const [sessionKey, setSessionKey] = useState<SessionKeyData | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [chainId, setChainId] = useState<number | null>(null);
+  const walletConnectProviderRef = useRef<
+    InstanceType<typeof EthereumProvider> | null
+  >(null);
 
   // ---- session key helpers ------------------------------------------------
 
@@ -195,18 +200,44 @@ export function EvmWalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [evmAddress, initializeSession]);
 
-  // ---- wallet connection via window.ethereum (MetaMask etc.) ---------------
+  // ---- wallet connection via injected providers or WalletConnect -----------
 
   const connectEvm = useCallback(async (): Promise<string | null> => {
     if (!FEATURES.EVM_WALLET) return null;
-    const injectedProvider = getInjectedEvmProvider();
-    if (!injectedProvider) {
-      console.error("No EVM wallet detected (e.g. MetaMask).");
-      return null;
+    let providerLike = getInjectedEvmProvider();
+
+    if (!providerLike) {
+      const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+      if (!projectId || projectId === "YOUR_PROJECT_ID") {
+        throw new Error(
+          "Mobile wallet connection is not configured. Set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID."
+        );
+      }
+
+      const walletConnectProvider =
+        walletConnectProviderRef.current ||
+        (await EthereumProvider.init({
+          projectId,
+          chains: [1],
+          optionalChains: [100, 137, 8453, 42161, 59144, 42220],
+          showQrModal: true,
+          metadata: {
+            name: "PermaTell",
+            description: "Permanent stories and POMP memories",
+            url: window.location.origin,
+            icons: [`${window.location.origin}/favicon.svg`],
+          },
+        }));
+
+      walletConnectProviderRef.current = walletConnectProvider;
+      if (!walletConnectProvider.connected) {
+        await walletConnectProvider.connect();
+      }
+      providerLike = walletConnectProvider as unknown as Eip1193Provider;
     }
 
     try {
-      const provider = new ethers.providers.Web3Provider(injectedProvider as any);
+      const provider = new ethers.providers.Web3Provider(providerLike as any);
       const accounts: string[] = await provider.send("eth_requestAccounts", []);
       if (accounts.length === 0) return null;
 
@@ -230,6 +261,8 @@ export function EvmWalletProvider({ children }: { children: React.ReactNode }) {
 
   const disconnectEvm = useCallback(() => {
     if (evmAddress) clearSessionKey(evmAddress);
+    void walletConnectProviderRef.current?.disconnect().catch(() => undefined);
+    walletConnectProviderRef.current = null;
     setEvmAddress(null);
     setEvmBalance(null);
     setSessionKey(null);

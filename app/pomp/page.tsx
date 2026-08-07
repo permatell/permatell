@@ -197,6 +197,7 @@ function mergeClaims(
 export default function PompPage() {
   const {
     address,
+    arweaveAddress,
     connectWallet,
     loading: arweaveWalletLoading,
     walletType,
@@ -356,7 +357,8 @@ export default function PompPage() {
   );
   const currentOrigin =
     typeof window === "undefined" ? "" : window.location.origin;
-  const arweaveMintAddress = walletType === "wander" ? address : null;
+  const arweaveMintAddress =
+    arweaveAddress || (walletType === "wander" ? address : null);
   const createdCampaignsForWallet = useMemo(
     () =>
       createdCampaigns.filter((item) => item.creator === arweaveMintAddress),
@@ -485,12 +487,15 @@ export default function PompPage() {
       const owned = await fetchOwnedPoaps(collector);
       setPoaps(owned);
       if (owned.length === 0) {
-        toast.message("No POAPs were returned for this wallet.");
+        toast.message(
+          `No POAPs found for ${collector.slice(0, 6)}...${collector.slice(-4)}. If this wallet should have POAPs, wait a moment and try again.`
+        );
       } else {
         toast.success(`Loaded ${owned.length} POAPs.`);
       }
     } catch (error: any) {
-      toast.error(error?.message || "Unable to load POAP collection.");
+      const message = error?.message || "Unable to load POAP collection.";
+      toast.error(message);
     } finally {
       setLoadingPoaps(false);
     }

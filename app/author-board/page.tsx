@@ -46,9 +46,9 @@ const AuthorBoard: React.FC = () => {
     fetchDiscoverPomps(50)
       .then(async (discovered) => {
         setPomps(discovered);
-        const nativePomps = discovered.filter(
-          (pomp) => pomp.assetType === "native-event"
-        );
+        const nativePomps = discovered
+          .filter((pomp) => pomp.assetType === "native-event")
+          .slice(0, 6);
         const stats = await Promise.allSettled(
           nativePomps.map(async (pomp) => ({
             assetId: pomp.assetId,

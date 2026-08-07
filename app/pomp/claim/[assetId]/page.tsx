@@ -23,7 +23,13 @@ import {
 export default function PompClaimPage() {
   const params = useParams<{ assetId: string }>();
   const assetId = String(params?.assetId || "");
-  const { address, connectWallet, loading, walletType } = useWallet();
+  const {
+    address,
+    arweaveAddress: connectedArweaveAddress,
+    connectWallet,
+    loading,
+    walletType,
+  } = useWallet();
   const [claimWord, setClaimWord] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [claimResult, setClaimResult] =
@@ -34,7 +40,8 @@ export default function PompClaimPage() {
   const [loadingCampaign, setLoadingCampaign] = useState(false);
   const [assetLoadError, setAssetLoadError] = useState("");
 
-  const arweaveAddress = walletType === "wander" ? address : null;
+  const arweaveAddress =
+    connectedArweaveAddress || (walletType === "wander" ? address : null);
   const claims = campaign ? Object.values(campaign.claims || {}) : [];
   const creatorAddress = asset?.tags?.Creator || asset?.arweaveOwner || "";
   const isCreator = Boolean(

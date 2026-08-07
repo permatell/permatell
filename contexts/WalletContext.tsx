@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { useWallet as useAOSyncWallet } from "@vela-ventures/aosync-sdk-react";
 import Arweave from "arweave";
 import AOProfile from "@permaweb/aoprofile";
@@ -67,6 +67,7 @@ export interface AOProfileData {
 
 interface WalletContextType {
   address: string | null;
+  arweaveAddress: string | null;
   walletType: WalletType;
   connectWallet: () => Promise<void>;
   connectAOsyncWallet: () => Promise<void>;
@@ -91,11 +92,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [address, setAddress] = useState<string | null>(null);
+  const [arweaveAddress, setArweaveAddress] = useState<string | null>(null);
   const [walletType, setWalletType] = useState<WalletType>(null);
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profile, setProfile] = useState<AOProfileData | null>(null);
   const [profileSDK, setProfileSDK] = useState<any | null>(null);
+  const wanderConnectRef = useRef<any | null>(null);
 
   const {
     connect: connectAOSync,
@@ -106,10 +109,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // EVM wallet integration
   const evmWallet = useEvmWallet();
+  const profileAddress =
+    arweaveAddress || (walletType === "evm" ? null : address);
 
   // Initialize the AO Profile SDK when address changes
   useEffect(() => {
-    if (!address) {
+    if (!profileAddress) {
       setProfile(null);
       setProfileLoading(false);
       return;
@@ -117,7 +122,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const initializeProfile = async () => {
       try {
-        console.log("Initializing SDKs for address:", address);
+        console.log("Initializing SDKs for address:", profileAddress);
 
         // Create a data item signer using the connected wallet
         // For EVM wallets, we use the session key; for AR wallets, the native signer
@@ -160,7 +165,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
           console.log("Fetching profile and ARN data...");
 
           // Check cache first
-          const cacheKey = generateCacheKey("arns", address);
+          const cacheKey = generateCacheKey("arns", profileAddress);
           const cachedProfile = arnsCache.get(cacheKey);
 
           if (cachedProfile) {
@@ -172,10 +177,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
           // Prefer the Portal/Bazar Zone profile lookup used by StreamVault.
           // The aoprofile registry delegate dry-run can fail on forward.computer,
           // even when the wallet already owns a valid Zone profile.
-          let userProfile = await getZoneProfileByWalletAddress(address);
+          let userProfile = await getZoneProfileByWalletAddress(profileAddress);
           if (!userProfile) {
             try {
-              userProfile = await getProfileByWalletAddress({ address });
+              userProfile = await getProfileByWalletAddress({ address: profileAddress });
             } catch (profileError) {
               console.warn(
                 "AO Profile registry lookup failed; no Zone profile fallback found:",
@@ -208,11 +213,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
               balanceResult,
               gatewayNode,
             ] = await Promise.all([
-              arnManager.getPrimaryARN(address),
-              arnManager.getAllPrimaryNames(address),
-              arnManager.checkPrimaryNameRequest(address),
-              arnManager.checkBalance(address),
-              arnManager.getGatewayNode(address),
+              arnManager.getPrimaryARN(profileAddress),
+              arnManager.getAllPrimaryNames(profileAddress),
+              arnManager.checkPrimaryNameRequest(profileAddress),
+              arnManager.checkBalance(profileAddress),
+              arnManager.getGatewayNode(profileAddress),
             ]);
 
             arnsData = {
@@ -282,19 +287,61 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     initializeProfile();
-  }, [address, walletType]);
+  }, [address, arweaveAddress, profileAddress, walletType]);
+
+  useEffect(() => {
+    return () => {
+      wanderConnectRef.current?.destroy?.();
+      wanderConnectRef.current = null;
+    };
+  }, []);
 
   // ---- Wallet connect handlers -------------------------------------------
+
+  const waitForEmbeddedArweaveWallet = async (timeoutMs = 30000) => {
+    if (window.arweaveWallet) return window.arweaveWallet;
+
+    return new Promise<NonNullable<Window["arweaveWallet"]>>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        window.removeEventListener("arweaveWalletLoaded", handleLoaded);
+        reject(new Error("Wander Connect did not finish loading the embedded wallet."));
+      }, timeoutMs);
+      const handleLoaded = () => {
+        window.clearTimeout(timeout);
+        window.removeEventListener("arweaveWalletLoaded", handleLoaded);
+        if (window.arweaveWallet) resolve(window.arweaveWallet);
+        else reject(new Error("Wander Connect loaded without a wallet provider."));
+      };
+      window.addEventListener("arweaveWalletLoaded", handleLoaded, { once: true });
+    });
+  };
+
+  const ensureArweaveWalletProvider = async () => {
+    if (window.arweaveWallet) return window.arweaveWallet;
+
+    if (!wanderConnectRef.current) {
+      const { WanderConnect } = await import("@wanderapp/connect");
+      wanderConnectRef.current = new WanderConnect({
+        clientId: process.env.NEXT_PUBLIC_WANDER_CONNECT_CLIENT_ID || "FREE_TRIAL",
+        button: false,
+        iframe: { theme: "dark" },
+      });
+    }
+
+    const walletReady = waitForEmbeddedArweaveWallet();
+    if (!window.arweaveWallet) {
+      wanderConnectRef.current.open?.();
+    }
+    return walletReady;
+  };
 
   const connectWallet = async () => {
     try {
       setLoading(true);
-      const wallet = globalThis.arweaveWallet || window.arweaveWallet;
+      let wallet: any = globalThis.arweaveWallet || window.arweaveWallet;
       console.log("[wallet] Wander/ArConnect provider detected:", Boolean(wallet));
       if (!wallet?.connect || !wallet?.getActiveAddress) {
-        throw new Error(
-          "Wander or ArConnect was not detected. Install or enable the extension, allow this site to access it, then refresh the page."
-        );
+        wallet = await ensureArweaveWalletProvider();
       }
 
       const permissions = ["ACCESS_ADDRESS", "SIGN_TRANSACTION", "DISPATCH"];
@@ -307,6 +354,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       }
       setAddress(walletAddress);
+      setArweaveAddress(walletAddress);
       setWalletType("wander");
     } catch (error) {
       const rawMessage =
@@ -348,6 +396,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       const walletAddress = await getAOSyncAddress();
       if (walletAddress) {
         setAddress(walletAddress);
+        setArweaveAddress(walletAddress);
         setWalletType("beacon");
       }
     } catch (error) {
@@ -394,13 +443,25 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(true);
       if (walletType === "wander") {
         await globalThis.arweaveWallet.disconnect();
+        const nextAddress = evmWallet.evmAddress || null;
+        setAddress(nextAddress);
+        setArweaveAddress(null);
+        setWalletType(nextAddress ? "evm" : null);
       } else if (walletType === "beacon") {
         await disconnectAOSync();
+        const nextAddress = evmWallet.evmAddress || null;
+        setAddress(nextAddress);
+        setArweaveAddress(null);
+        setWalletType(nextAddress ? "evm" : null);
       } else if (walletType === "evm") {
         evmWallet.disconnectEvm();
+        setAddress(arweaveAddress);
+        setWalletType(arweaveAddress ? "wander" : null);
+      } else {
+        setAddress(null);
+        setArweaveAddress(null);
+        setWalletType(null);
       }
-      setAddress(null);
-      setWalletType(null);
       setProfile(null);
     } catch (error) {
       console.error("Failed to disconnect wallet:", error);
@@ -580,6 +641,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         await disconnectAOSync();
         setAddress(null);
+        setArweaveAddress(null);
         setWalletType(null);
         setProfile(null);
       } catch (error) {
@@ -601,6 +663,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
             await globalThis.arweaveWallet.disconnect();
           }
           setAddress(null);
+          setArweaveAddress(null);
           setWalletType(null);
           setProfile(null);
         } catch (error) {
@@ -618,6 +681,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     <WalletContext.Provider
       value={{
         address,
+        arweaveAddress,
         walletType,
         connectWallet,
         connectAOsyncWallet,

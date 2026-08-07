@@ -68,6 +68,7 @@ const truncateAddress = (address: string | undefined): string => {
 export function WalletStatus() {
   const { 
     address, 
+    arweaveAddress,
     walletType,
     profile, 
     profileLoading, 
@@ -82,6 +83,11 @@ export function WalletStatus() {
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [copiedProfileId, setCopiedProfileId] = useState(false);
   const [allArns, setAllArns] = useState<string[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -99,13 +105,13 @@ export function WalletStatus() {
 
   useEffect(() => {
     const fetchArnsNames = async () => {
-      if (!address || walletType === "evm") {
+      if (!arweaveAddress) {
         setAllArns([]);
         return;
       }
       
       try {
-        const names = await getAllArnsNames(address);
+        const names = await getAllArnsNames(arweaveAddress);
         console.log('Fetched ARNS names:', names);
         setAllArns(names);
       } catch (error) {
@@ -114,7 +120,7 @@ export function WalletStatus() {
     };
     
     fetchArnsNames();
-  }, [address, walletType]);
+  }, [arweaveAddress]);
 
   // Add debugging for profile and balance
   useEffect(() => {
@@ -138,6 +144,15 @@ export function WalletStatus() {
           ? error.message
           : "Unable to connect Wander or ArConnect. Check the extension and approve the request."
       );
+    }
+  };
+
+  const copyAppUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success("PermaTell link copied. Open it in Wander > Explore Apps.");
+    } catch {
+      toast.error("Copy failed. Open this page inside Wander > Explore Apps.");
     }
   };
 
@@ -168,7 +183,7 @@ export function WalletStatus() {
     }
   };
 
-  if (!address) {
+  if (!address || (walletType === "evm" && !arweaveAddress)) {
     return (
       <Dialog>
         <DialogTrigger asChild>
@@ -181,6 +196,33 @@ export function WalletStatus() {
             <DialogTitle>Connect your wallet</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4">
+            {isMobile && (
+              <div className="rounded-md border border-cyan-400/30 bg-cyan-400/10 p-3 text-sm text-cyan-100">
+                <p className="font-medium">Using a phone?</p>
+                <p className="mt-1 text-cyan-100/80">
+                  Open the Wander app, choose <b>Explore Apps</b>, and enter this
+                  site URL. Then tap Connect Wallet inside Wander.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={copyAppUrl}
+                    className="h-8 gap-2 border-cyan-400/30 bg-black/20 text-xs text-cyan-100"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Copy site link
+                  </Button>
+                  <a
+                    href="https://www.wander.app/help/how-to-connect-your-wander-mobile-app-to-ao-arweave-applications"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex h-8 items-center rounded-md px-2 text-xs text-cyan-200 underline underline-offset-2 hover:text-white"
+                  >
+                    Mobile instructions
+                  </a>
+                </div>
+              </div>
+            )}
             <Button
               onClick={handleConnectWallet}
               variant="default"

@@ -10,6 +10,7 @@ import {
   MAINNET_DEFAULTS,
 } from "@/lib/ao-config";
 import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
+import { TtlCache, rateLimitMessage } from "@/lib/ttlCache";
 import { getArweaveUrl, uploadToArweave } from "@/lib/arweave";
 import { POMP_CAMPAIGN_LUA } from "@/lib/pompCampaignLua";
 
@@ -213,7 +214,7 @@ export interface PompCampaignInfo {
   claimed: number;
   remaining: number;
   ownerBalance: string;
-  source: "dryrun" | "gateway";
+  source: "hyperbeam" | "dryrun" | "gateway";
 }
 
 export interface UploadResult {
@@ -652,20 +653,38 @@ async function compressArtworkForBundling(file: File): Promise<File> {
   }
 }
 
+const CLIENT_DISCOVERY_TTL_MS = 45_000;
+const ownedPoapCache = new TtlCache<OwnedPoap[]>(CLIENT_DISCOVERY_TTL_MS);
+const discoverPompCache = new TtlCache<PompClaimedAsset[]>(CLIENT_DISCOVERY_TTL_MS);
+const campaignInfoCache = new TtlCache<PompCampaignInfo>(CLIENT_DISCOVERY_TTL_MS);
+
+function throwDiscoveryError(response: Response, json: any, fallback: string): never {
+  if (response.status === 429) {
+    throw new Error(
+      json?.error || rateLimitMessage("Discovery", "Please wait about 30 seconds.")
+    );
+  }
+  throw new Error(json?.error || fallback);
+}
+
 export async function fetchOwnedPoaps(address: string): Promise<OwnedPoap[]> {
   if (!isAddress(address)) {
     throw new Error("Connect or enter a valid EVM wallet address.");
   }
+  const normalized = getAddress(address);
+  const cacheKey = `owned-poaps:${normalized.toLowerCase()}`;
 
-  const response = await fetch(
-    `/api/poap/collector?address=${encodeURIComponent(getAddress(address))}`,
-    { cache: "no-store" }
-  );
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(json?.error || "Unable to fetch POAP collection.");
-  }
-  return Array.isArray(json?.poaps) ? json.poaps : [];
+  return ownedPoapCache.getOrLoad(cacheKey, async () => {
+    const response = await fetch(
+      `/api/poap/collector?address=${encodeURIComponent(normalized)}`,
+      { cache: "no-store" }
+    );
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throwDiscoveryError(response, json, "Unable to fetch POAP collection.");
+    }
+    return Array.isArray(json?.poaps) ? json.poaps : [];
+  });
 }
 
 export async function fetchPompAssetsByOwner(
@@ -673,16 +692,19 @@ export async function fetchPompAssetsByOwner(
 ): Promise<PompClaimedAsset[]> {
   const owner = normalizeText(ownerAddress);
   if (!owner) return [];
+  const cacheKey = `pomp-owner:${owner}:50`;
 
-  const response = await fetch(
-    `/api/pomp/discover?owner=${encodeURIComponent(owner)}&limit=50`,
-    { cache: "no-store" }
-  );
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(json?.error || "Unable to load POMPs from Arweave.");
-  }
-  return Array.isArray(json?.pomps) ? json.pomps : [];
+  return discoverPompCache.getOrLoad(cacheKey, async () => {
+    const response = await fetch(
+      `/api/pomp/discover?owner=${encodeURIComponent(owner)}&limit=50`,
+      { cache: "no-store" }
+    );
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throwDiscoveryError(response, json, "Unable to load POMPs from Arweave.");
+    }
+    return Array.isArray(json?.pomps) ? json.pomps : [];
+  });
 }
 
 export async function fetchPompCampaignsByCreator(
@@ -690,18 +712,25 @@ export async function fetchPompCampaignsByCreator(
 ): Promise<PompClaimedAsset[]> {
   const creator = normalizeText(creatorAddress);
   if (!creator) return [];
+  const cacheKey = `pomp-creator:${creator}:native-event:50`;
 
-  const response = await fetch(
-    `/api/pomp/discover?creator=${encodeURIComponent(
-      creator
-    )}&assetType=native-event&limit=50`,
-    { cache: "no-store" }
-  );
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(json?.error || "Unable to load created POMP campaigns.");
-  }
-  return Array.isArray(json?.pomps) ? json.pomps : [];
+  return discoverPompCache.getOrLoad(cacheKey, async () => {
+    const response = await fetch(
+      `/api/pomp/discover?creator=${encodeURIComponent(
+        creator
+      )}&assetType=native-event&limit=50`,
+      { cache: "no-store" }
+    );
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throwDiscoveryError(
+        response,
+        json,
+        "Unable to load created POMP campaigns."
+      );
+    }
+    return Array.isArray(json?.pomps) ? json.pomps : [];
+  });
 }
 
 function pompAssetFromGraphqlEdge(
@@ -739,14 +768,21 @@ function pompAssetFromGraphqlEdge(
 export async function fetchDiscoverPomps(
   limit = 24
 ): Promise<PompClaimedAsset[]> {
-  const response = await fetch(`/api/pomp/discover?limit=${limit}`, {
-    cache: "no-store",
+  const cacheKey = `pomp-discover:${limit}`;
+  return discoverPompCache.getOrLoad(cacheKey, async () => {
+    const response = await fetch(`/api/pomp/discover?limit=${limit}`, {
+      cache: "no-store",
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throwDiscoveryError(
+        response,
+        json,
+        "Unable to discover POMPs from Arweave."
+      );
+    }
+    return Array.isArray(json?.pomps) ? json.pomps : [];
   });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(json?.error || "Unable to discover POMPs from Arweave.");
-  }
-  return Array.isArray(json?.pomps) ? json.pomps : [];
 }
 
 export async function fetchPompCampaignInfo(
@@ -754,14 +790,20 @@ export async function fetchPompCampaignInfo(
 ): Promise<PompCampaignInfo> {
   const id = normalizeAoId(assetId);
   if (!id) throw new Error("A valid POMP asset id is required.");
-  const response = await fetch(`/api/pomp/campaign/${encodeURIComponent(id)}`, {
-    cache: "no-store",
+  return campaignInfoCache.getOrLoad(`campaign:${id}`, async () => {
+    const response = await fetch(`/api/pomp/campaign/${encodeURIComponent(id)}`, {
+      cache: "no-store",
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throwDiscoveryError(
+        response,
+        json,
+        "Unable to load POMP campaign details."
+      );
+    }
+    return json;
   });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(json?.error || "Unable to load POMP campaign details.");
-  }
-  return json;
 }
 
 export async function fetchPompAssetDetail(

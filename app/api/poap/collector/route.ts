@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, getAddress, http, isAddress } from "viem";
 import type { Chain } from "viem";
 import { lookupPoapArchive } from "../_archive";
+import {
+  TtlCache,
+  isRateLimitStatus,
+  rateLimitMessage,
+} from "@/lib/ttlCache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -9,6 +14,28 @@ export const runtime = "nodejs";
 const POAP_API_BASE = process.env.POAP_API_BASE || "https://api.poap.tech";
 const POAP_CONTRACT_ADDRESS = "0x22C1f6050E56d2876009903609a2cC3fEf83B415";
 const MAX_ONCHAIN_TOKENS_PER_NETWORK = 120;
+const RPC_TIMEOUT_MS = 12_000;
+const METADATA_TIMEOUT_MS = 5_000;
+const ARCHIVE_ENRICH_TIMEOUT_MS = 8_000;
+const COLLECTOR_CACHE_TTL_MS = 60_000;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 const poapAbi = [
   {
@@ -118,6 +145,16 @@ interface NormalizedPoap {
   raw: unknown;
 }
 
+type CollectorPayload = {
+  address: string;
+  count: number;
+  source: string;
+  truncatedPerNetworkAt?: number;
+  poaps: NormalizedPoap[];
+};
+
+const collectorCache = new TtlCache<CollectorPayload>(COLLECTOR_CACHE_TTL_MS);
+
 function pickString(source: any, keys: string[]): string {
   for (const key of keys) {
     const value = source?.[key];
@@ -168,15 +205,20 @@ function normalizeMetadataUrl(value: string): string {
 async function fetchTokenMetadata(uri: string): Promise<any> {
   const url = normalizeMetadataUrl(uri);
   if (!url || !/^https?:\/\//i.test(url)) return {};
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), METADATA_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       cache: "no-store",
       headers: { Accept: "application/json" },
+      signal: controller.signal,
     });
     if (!response.ok) return {};
     return await response.json();
   } catch {
     return {};
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -288,7 +330,10 @@ async function fetchOnchainPoapsForNetwork(
 ): Promise<NormalizedPoap[]> {
   const client = createPublicClient({
     chain: poapChain(network),
-    transport: http(network.rpcUrl),
+    transport: http(network.rpcUrl, {
+      timeout: RPC_TIMEOUT_MS,
+      retryCount: 1,
+    }),
   });
 
   const owner = getAddress(address);
@@ -337,13 +382,29 @@ async function fetchOnchainPoapsForNetwork(
     .map((row) => row.value);
 }
 
-async function fetchOnchainPoaps(address: string): Promise<NormalizedPoap[]> {
+async function fetchOnchainPoaps(address: string): Promise<{
+  poaps: NormalizedPoap[];
+  failedNetworks: string[];
+  succeededNetworks: number;
+}> {
   const results = await Promise.allSettled(
     POAP_NETWORKS.map((network) => fetchOnchainPoapsForNetwork(address, network))
   );
-  return results.flatMap((result) =>
-    result.status === "fulfilled" ? result.value : []
-  );
+  const poaps: NormalizedPoap[] = [];
+  const failedNetworks: string[] = [];
+  let succeededNetworks = 0;
+
+  results.forEach((result, index) => {
+    const network = POAP_NETWORKS[index];
+    if (result.status === "fulfilled") {
+      succeededNetworks += 1;
+      poaps.push(...result.value);
+    } else {
+      failedNetworks.push(network.key);
+    }
+  });
+
+  return { poaps, failedNetworks, succeededNetworks };
 }
 
 function normalizePoap(raw: any): NormalizedPoap {
@@ -461,20 +522,49 @@ async function enrichPoapsWithArchive(
 }
 
 export async function GET(request: NextRequest) {
-  const address = request.nextUrl.searchParams.get("address") || "";
-  if (!isAddress(address)) {
+  const addressParam = request.nextUrl.searchParams.get("address") || "";
+  if (!isAddress(addressParam)) {
     return NextResponse.json(
       { error: "A valid EVM address is required." },
       { status: 400 }
     );
   }
+  const address = getAddress(addressParam);
+  const cacheKey = `poap:${address.toLowerCase()}`;
+  const cached = collectorCache.get(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached, {
+      headers: { "Cache-Control": "private, max-age=30" },
+    });
+  }
 
   const apiKey =
     process.env.POAP_API_KEY || process.env.NEXT_PUBLIC_POAP_API_KEY || "";
   const bearer = process.env.POAP_AUTH_TOKEN || process.env.POAP_BEARER_TOKEN || "";
+
+  const respond = (payload: CollectorPayload) => {
+    collectorCache.set(cacheKey, payload);
+    return NextResponse.json(payload);
+  };
+
   if (!apiKey && !bearer) {
-    const poaps = await enrichPoapsWithArchive(await fetchOnchainPoaps(address));
-    return NextResponse.json({
+    const onchain = await fetchOnchainPoaps(address);
+    if (onchain.succeededNetworks === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Unable to read on-chain POAPs from any network. RPCs may be rate-limited or unreachable. Try again shortly.",
+          failedNetworks: onchain.failedNetworks,
+        },
+        { status: 502 }
+      );
+    }
+    const poaps = await withTimeout(
+      enrichPoapsWithArchive(onchain.poaps),
+      ARCHIVE_ENRICH_TIMEOUT_MS,
+      onchain.poaps
+    );
+    return respond({
       address,
       count: poaps.length,
       source: "onchain+archive-fallback",
@@ -498,6 +588,40 @@ export async function GET(request: NextRequest) {
 
   const text = await response.text();
   if (!response.ok) {
+    // Prefer a partial on-chain answer over a hard failure when the API is
+    // rate-limited or temporarily unavailable.
+    if (isRateLimitStatus(response.status) || response.status >= 500) {
+      const onchain = await fetchOnchainPoaps(address);
+      if (onchain.poaps.length > 0 || onchain.succeededNetworks > 0) {
+        const poaps = await withTimeout(
+          enrichPoapsWithArchive(onchain.poaps),
+          ARCHIVE_ENRICH_TIMEOUT_MS,
+          onchain.poaps
+        );
+        return respond({
+          address,
+          count: poaps.length,
+          source: "onchain-fallback-after-poap-api-error",
+          truncatedPerNetworkAt: MAX_ONCHAIN_TOKENS_PER_NETWORK,
+          poaps,
+        });
+      }
+      return NextResponse.json(
+        {
+          error: rateLimitMessage(
+            "POAP API",
+            `Request failed with ${response.status}.`
+          ),
+          details: text.slice(0, 500),
+        },
+        {
+          status: isRateLimitStatus(response.status) ? 429 : 502,
+          headers: isRateLimitStatus(response.status)
+            ? { "Retry-After": "30" }
+            : undefined,
+        }
+      );
+    }
     return NextResponse.json(
       {
         error: `POAP API request failed with ${response.status}.`,
@@ -527,10 +651,15 @@ export async function GET(request: NextRequest) {
     ? (parsed as any).data
     : [];
 
-  return NextResponse.json({
+  const normalized = items.map(normalizePoap);
+  return respond({
     address,
     count: items.length,
     source: "poap-api+archive-fallback",
-    poaps: await enrichPoapsWithArchive(items.map(normalizePoap)),
+    poaps: await withTimeout(
+      enrichPoapsWithArchive(normalized),
+      ARCHIVE_ENRICH_TIMEOUT_MS,
+      normalized
+    ),
   });
 }

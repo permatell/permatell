@@ -146,7 +146,7 @@ const Dashboard = () => {
         setLoadingPomps(false);
         const nativePomps = discovered
           .filter((pomp) => pomp.assetType === "native-event")
-          .slice(0, 12);
+          .slice(0, 6);
         const stats = await Promise.allSettled(
           nativePomps.map(async (pomp) => ({
             assetId: pomp.assetId,
@@ -165,16 +165,15 @@ const Dashboard = () => {
           }
         }
         if (!cancelled) setPompCampaignStats(nextStats);
-
-        if (discovered.length === 0 && attempt < 2) {
-          attempt += 1;
-          retryTimer = setTimeout(loadPomps, 5000);
-        }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         console.warn("Unable to load POMPs for discovery:", error);
-        if (!cancelled && attempt < 2) {
+        const rateLimited = /rate[- ]?limit|429/i.test(message);
+        // Empty/rate-limited discovery should not spam GraphQL/HyperBEAM
+        // fallbacks — that is what triggered the nginx 429 regression.
+        if (!cancelled && !rateLimited && attempt < 1) {
           attempt += 1;
-          retryTimer = setTimeout(loadPomps, 5000);
+          retryTimer = setTimeout(loadPomps, 12_000);
         }
       } finally {
         if (!cancelled) setLoadingPomps(false);
