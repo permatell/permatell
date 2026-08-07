@@ -32,13 +32,23 @@ const nextConfig = {
     });
 
     if (isServer) {
-      // Polyfill `self` for server-side so that @permaweb/aoconnect
-      // (which references `self` internally) can be imported during SSR.
+      // Polyfill browser globals that browser-flavoured dependencies touch at
+      // module scope so they can be imported during SSR:
+      //  - `self`: referenced internally by @permaweb/aoconnect.
+      //  - `navigator`: @permaweb/aoconnect -> @permaweb/ao-core-libs ships a
+      //    prebundled mqtt build whose `process` shim reads `navigator.language`
+      //    while the module is evaluated. Node 21+ exposes a global `navigator`,
+      //    but Node 20 (and older) does not, which crashed every SSR render with
+      //    `ReferenceError: navigator is not defined`. The shape below mirrors
+      //    Node 22's built-in navigator so behaviour is identical across runtimes.
       config.plugins.push(
         new webpack.BannerPlugin({
           raw: true,
           entryOnly: false,
-          banner: 'if(typeof self==="undefined"){globalThis.self=globalThis;}',
+          banner: [
+            'if(typeof self==="undefined"){globalThis.self=globalThis;}',
+            'if(typeof navigator==="undefined"){globalThis.navigator={language:"en-US",languages:["en-US"],userAgent:"Node.js",platform:"linux",hardwareConcurrency:1};}',
+          ].join(""),
         })
       );
     }

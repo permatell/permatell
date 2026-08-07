@@ -9,7 +9,9 @@ import React, {
   useRef,
 } from "react";
 import { ethers } from "ethers";
-import { EthereumProvider } from "@walletconnect/ethereum-provider";
+// Type-only import: the WalletConnect provider is loaded lazily inside
+// `connectEvm` so its browser-only module graph never reaches the SSR bundle.
+import type { EthereumProvider as WalletConnectProvider } from "@walletconnect/ethereum-provider";
 import { FEATURES } from "@/lib/ao-config";
 
 // ---------------------------------------------------------------------------
@@ -159,7 +161,7 @@ export function EvmWalletProvider({ children }: { children: React.ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const [chainId, setChainId] = useState<number | null>(null);
   const walletConnectProviderRef = useRef<
-    InstanceType<typeof EthereumProvider> | null
+    InstanceType<typeof WalletConnectProvider> | null
   >(null);
 
   // ---- session key helpers ------------------------------------------------
@@ -213,6 +215,10 @@ export function EvmWalletProvider({ children }: { children: React.ReactNode }) {
           "Mobile wallet connection is not configured. Set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID."
         );
       }
+
+      const { EthereumProvider } = await import(
+        "@walletconnect/ethereum-provider"
+      );
 
       const walletConnectProvider =
         walletConnectProviderRef.current ||
