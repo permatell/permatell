@@ -8,11 +8,14 @@ import React, {
   useEffect,
 } from "react";
 
-const STORAGE_KEY = "permatell_network_mode";
-const CONFIGURED_MODE =
-  process.env.NEXT_PUBLIC_AO_MODE === "legacy" ? "legacy" : "mainnet";
-
 export type NetworkMode = "mainnet" | "legacy";
+
+const STORAGE_KEY = "permatell_network_mode";
+/** Default mode from env; users can still toggle unless explicitly locked. */
+const DEFAULT_MODE: NetworkMode =
+  process.env.NEXT_PUBLIC_AO_MODE === "legacy" ? "legacy" : "mainnet";
+/** Set NEXT_PUBLIC_AO_LOCK_NETWORK=true to freeze the UI on DEFAULT_MODE. */
+const NETWORK_LOCKED = process.env.NEXT_PUBLIC_AO_LOCK_NETWORK === "true";
 
 interface NetworkModeContextType {
   networkMode: NetworkMode;
@@ -25,29 +28,29 @@ const NetworkModeContext = createContext<NetworkModeContextType | undefined>(
 );
 
 function readStoredMode(): NetworkMode {
-  if (CONFIGURED_MODE === "mainnet") return "mainnet";
-  if (typeof window === "undefined") return CONFIGURED_MODE;
+  if (NETWORK_LOCKED) return DEFAULT_MODE;
+  if (typeof window === "undefined") return DEFAULT_MODE;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "legacy" || stored === "mainnet") return stored;
   } catch {
     // ignore
   }
-  return CONFIGURED_MODE;
+  return DEFAULT_MODE;
 }
 
 export function NetworkModeProvider({ children }: { children: React.ReactNode }) {
-  const [networkMode, setNetworkModeState] = useState<NetworkMode>(CONFIGURED_MODE);
+  const [networkMode, setNetworkModeState] = useState<NetworkMode>(DEFAULT_MODE);
 
   useEffect(() => {
     setNetworkModeState(readStoredMode());
   }, []);
 
   const setNetworkMode = useCallback((mode: NetworkMode) => {
-    if (CONFIGURED_MODE === "mainnet") {
-      setNetworkModeState("mainnet");
+    if (NETWORK_LOCKED) {
+      setNetworkModeState(DEFAULT_MODE);
       try {
-        localStorage.setItem(STORAGE_KEY, "mainnet");
+        localStorage.setItem(STORAGE_KEY, DEFAULT_MODE);
       } catch {
         // ignore
       }

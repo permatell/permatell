@@ -31,7 +31,7 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const networkMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
-  const canSwitchNetwork = process.env.NEXT_PUBLIC_AO_MODE !== "mainnet";
+  const canSwitchNetwork = process.env.NEXT_PUBLIC_AO_LOCK_NETWORK !== "true";
   const writeNode =
     process.env.NEXT_PUBLIC_AO_WRITE_URL ||
     process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL ||

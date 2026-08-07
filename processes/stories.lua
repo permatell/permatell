@@ -1,7 +1,22 @@
+-- Permatell Stories registry process (mainnet + legacy compatible).
+-- Story body content is read from msg.Data (preferred) with msg.content fallback
+-- so HyperBEAM / browser writes can keep large payloads out of tags.
+
 local last_story_id = 1
-local STORY_POINTS_PROCESS_ADDRESS = "CiCoT60SUbCAJYY2ncv_-BJOQvGB0tHib_mTLJv4Q6Q"
+-- Replaced by scripts/spawn-mainnet-processes.mjs when spawning on mainnet.
+local STORY_POINTS_PROCESS_ADDRESS = "__STORY_POINTS_PROCESS_ID__"
 
 local stories = {}
+
+local function story_content(msg)
+  if type(msg.Data) == "string" and msg.Data ~= "" then
+    return msg.Data
+  end
+  if type(msg.content) == "string" then
+    return msg.content
+  end
+  return ""
+end
 
 local function generate_story_id()
   last_story_id = last_story_id + 1
@@ -20,7 +35,12 @@ local function generate_new_version_id(story)
 end
 
 local function send_story_points(address, points)
-  local result = ao.send({
+  if not STORY_POINTS_PROCESS_ADDRESS
+    or STORY_POINTS_PROCESS_ADDRESS == ""
+    or STORY_POINTS_PROCESS_ADDRESS == "__STORY_POINTS_PROCESS_ID__" then
+    return
+  end
+  ao.send({
     Target = STORY_POINTS_PROCESS_ADDRESS,
     Action = "AddStoryPoints",
     address = address,
@@ -37,12 +57,25 @@ local function increment_version_votes(story_id, version_id)
   return false
 end
 
+-- Optional: wire story-points after spawn if not baked into source.
+Handlers.add("set_story_points_process",
+  { Action = "SetStoryPointsProcess" },
+  function(msg)
+    if type(msg.process_id) == "string" and msg.process_id ~= "" then
+      STORY_POINTS_PROCESS_ADDRESS = msg.process_id
+      ao.send({ Target = msg.From, Data = "Story points process set to " .. msg.process_id })
+    else
+      ao.send({ Target = msg.From, Data = "Invalid process_id" })
+    end
+  end
+)
+
 -- @mutation
 Handlers.add("create_story",
   { Action = "CreateStory" },
   function(msg)
     local story_id = generate_story_id()
-    
+
     stories[story_id] = {
       id = story_id,
       current_version = "1",
@@ -51,7 +84,7 @@ Handlers.add("create_story",
         ["1"] = {
           id = 1,
           title = msg.title,
-          content = msg.content,
+          content = story_content(msg),
           cover_image = msg.cover_image or "",
           author = msg.From,
           timestamp = os.time(),
@@ -60,9 +93,9 @@ Handlers.add("create_story",
         }
       }
     }
-    
+
     send_story_points(msg.From, 10)
-    
+
     ao.send({ Target = msg.From, Data = "Story created with ID: " .. story_id })
   end
 )
@@ -75,20 +108,24 @@ Handlers.add("create_story_version",
     if story then
       local new_version_id = generate_new_version_id(story)
       local current_version = story.versions[story.current_version]
+      local next_content = story_content(msg)
+      if next_content == "" then
+        next_content = current_version.content
+      end
       story.current_version = new_version_id
       story.versions[new_version_id] = {
         id = tonumber(new_version_id),
         title = msg.title or current_version.title,
-        content = msg.content or current_version.content,
+        content = next_content,
         cover_image = msg.cover_image or current_version.cover_image,
         author = msg.From,
         timestamp = tostring(os.time()),
         category = msg.category or current_version.category,
         votes = 0
       }
-      
+
       send_story_points(msg.From, 5)
-      
+
       ao.send({ Target = msg.From, Data = "Story updated with new version: " .. new_version_id })
     else
       ao.send({ Target = msg.From, Data = "Story not found!" })

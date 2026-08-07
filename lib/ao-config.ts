@@ -353,6 +353,10 @@ let _mainnetSigner: unknown = undefined;
  * We intentionally do NOT provide MU_URL/CU_URL overrides here, because mainnet
  * HyperBEAM routing should be controlled via `URL` + `SCHEDULER` (and providing
  * legacy MU/CU endpoints has caused DNS / relay issues in practice).
+ *
+ * Spawn registry processes with `npm run ao:spawn-mainnet`, then set
+ * NEXT_PUBLIC_MAINNET_STORIES_PROCESS_ID / NEXT_PUBLIC_MAINNET_STORYPOINTS_PROCESS_ID
+ * so browser writes target those IDs (content in message Data).
  */
 export function getMainnetAO(signer?: unknown) {
   const url = getHyperbeamWriteUrl();
@@ -371,9 +375,8 @@ export function getMainnetAO(signer?: unknown) {
     const config: Record<string, unknown> = {
       MODE: "mainnet",
       URL: url,
-      // `relay@1.0` is Portal’s default browser-friendly path (DataItem signer).
-      // `process@1.0` routes through HyperBEAM’s process device which typically
-      // requires RFC-9421 HTTP message signatures (not DataItem signatures).
+      // Prefer relay@1.0 for browser DataItem signers. process@1.0 push often
+      // expects RFC-9421 HTTP signatures that wallet extensions do not provide.
       device: MAINNET_DEVICE,
       SCHEDULER: scheduler,
       GATEWAY_URL: "https://arweave.net",

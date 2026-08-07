@@ -9,6 +9,7 @@ import {
   createDataItemSigner,
   HAS_EXPLICIT_MAINNET_PROCESS_IDS,
 } from "@/lib/ao-config";
+import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
 import { useWallet } from "@/contexts/WalletContext";
 import { useNetworkMode } from "@/contexts/NetworkModeContext";
 import { Story, CurrentStory } from "@/interfaces/Story";
@@ -116,12 +117,14 @@ export const StoriesProcessProvider: React.FC<{
     const signer = getSigner();
     if (useMainnetPerStoryProcesses || useMainnetRegistryProcess) {
       const ao = getMainnetAO(signer)!;
-      await ao.message({
-        process: targetProcess,
-        tags,
-        data: data ?? undefined,
-        signer,
-      });
+      await withHyperbeamGlobalFetch(() =>
+        ao.message({
+          process: targetProcess,
+          tags,
+          data: data ?? undefined,
+          signer,
+        })
+      );
     } else {
       const { message } = getAO();
       await message({
@@ -132,34 +135,50 @@ export const StoriesProcessProvider: React.FC<{
     }
   };
 
+  const parseDryrunData = (res: { Messages?: { Data?: unknown }[] }) => {
+    if (res.Messages && res.Messages.length > 0) {
+      const data = res.Messages[0]?.Data;
+      try {
+        return typeof data === "string" ? JSON.parse(data) : data;
+      } catch {
+        return data;
+      }
+    }
+    throw new Error("No messages returned from the process");
+  };
+
   const getDryrunResult = useCallback(
     async (tags: { name: string; value: string }[]) => {
       try {
         await new Promise((resolve) => setTimeout(resolve, 500));
 
-        if (!useMainnetRegistryProcess) {
-          const { dryrun } = getAO();
-          const res = await withTimeout(
-            dryrun({
-              process: processId,
-              tags,
-            }),
-            "AO story read"
-          );
-          if (address) getUserStoryPoints(address);
-          if (res.Messages && res.Messages.length > 0) {
-            const data = res.Messages[0]?.Data;
-            try {
-              return typeof data === "string" ? JSON.parse(data) : data;
-            } catch {
-              return data;
+        // Explicit mainnet registry: prefer HyperBEAM dryrun (Portal path).
+        // Fall back to legacy CU for wallet-less / CU-indexed processes.
+        if (useMainnetRegistryProcess) {
+          try {
+            if (globalThis.arweaveWallet) {
+              const signer = createDataItemSigner(globalThis.arweaveWallet);
+              const ao = getMainnetAO(signer)!;
+              const res = await withTimeout(
+                withHyperbeamGlobalFetch(() =>
+                  ao.dryrun({
+                    process: processId,
+                    tags,
+                  })
+                ),
+                "AO story read"
+              );
+              if (address) getUserStoryPoints(address);
+              return parseDryrunData(res);
             }
+          } catch (mainnetReadError) {
+            console.warn(
+              "[stories] mainnet dryrun failed, trying legacy CU",
+              mainnetReadError
+            );
           }
-          throw new Error("No messages returned from the process");
         }
 
-        // Mainnet: do NOT use HyperBEAM compute/dryrun against legacy processes.
-        // Use the legacy CU dry-run API instead (wallet-less, stable).
         const { dryrun } = getAO();
         const res = await withTimeout(
           dryrun({
@@ -168,16 +187,8 @@ export const StoriesProcessProvider: React.FC<{
           }),
           "AO story read"
         );
-        if (res.Messages && res.Messages.length > 0) {
-          if (address) getUserStoryPoints(address);
-          const data = res.Messages[0]?.Data;
-          try {
-            return typeof data === "string" ? JSON.parse(data) : data;
-          } catch {
-            return data;
-          }
-        }
-        throw new Error("No messages returned from the process");
+        if (address) getUserStoryPoints(address);
+        return parseDryrunData(res);
       } catch (error: any) {
         if (error.status === 429) {
           await new Promise((resolve) => setTimeout(resolve, 2000));

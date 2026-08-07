@@ -3,18 +3,58 @@
 Permatell can write through any HyperBEAM node, but the write URL, scheduler,
 and authority must belong to the same node/operator setup.
 
-## Current Stable App Settings
+## Architecture (Portal-like)
 
-These match the Portal production write path used by StreamVault:
+1. **Spawn / hydrate (Node + JWK)** — run once:
+   `npm run ao:spawn-mainnet -- --wallet /path/to/jwk.json`
+   Prints `NEXT_PUBLIC_MAINNET_STORIES_PROCESS_ID` and
+   `NEXT_PUBLIC_MAINNET_STORYPOINTS_PROCESS_ID`.
+2. **Browser writes** — Wander/Beacon `createDataItemSigner` via
+   `connect({ MODE: "mainnet", URL, SCHEDULER, signer })`. Story body goes in
+   message `Data` (not tags). Device default: `relay@1.0`.
+3. **Browser reads** — HyperBEAM dryrun when a wallet is present; legacy CU
+   dryrun as fallback. Without explicit mainnet process IDs, mainnet stays on
+   per-story spawn / localStorage (read-only registry).
+4. **Legacy toggle** — remains available unless `NEXT_PUBLIC_AO_LOCK_NETWORK=true`.
+
+Never commit JWKs or `.env.local`.
+
+## Current Stable App Settings (Portal write path)
+
+These match the Portal production write path used by StreamVault / atomic assets:
 
 ```env
+NEXT_PUBLIC_AO_MODE=mainnet
 NEXT_PUBLIC_AO_WRITE_URL=https://hb.portalinto.com
+NEXT_PUBLIC_HYPERBEAM_URL=https://hb.portalinto.com
 NEXT_PUBLIC_AO_MAINNET_SCHEDULER=n_XZJhUnmldNFo4dhajoPZWhBXuJk-OcQr5JQ49c4Zo
 NEXT_PUBLIC_AO_MAINNET_AUTHORITY=a5ZMUKbGClAsKzB4SHDYrwkOZZHIIfpbaxrmKwUHCe8
 NEXT_PUBLIC_AO_MAINNET_SCHEDULER_DEVICE=scheduler@1.0
+NEXT_PUBLIC_AO_MAINNET_DEVICE=relay@1.0
+NEXT_PUBLIC_AO_MAINNET_MODULE=ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s
+```
+
+After spawn, also set:
+
+```env
+NEXT_PUBLIC_MAINNET_STORIES_PROCESS_ID=<from spawn script>
+NEXT_PUBLIC_MAINNET_STORYPOINTS_PROCESS_ID=<from spawn script>
 ```
 
 Do not mix Portal's scheduler or authority with `https://arweave.nyc`.
+
+## Spawn commands
+
+```sh
+# Config + node probe only (no wallet)
+npm run ao:smoke
+npm run ao:spawn-mainnet:dry
+
+# Real spawn (JWK stays on your machine)
+npm run ao:spawn-mainnet -- --wallet ~/path/to/arweave-jwk.json
+```
+
+Paste the printed process IDs into Vercel env and redeploy.
 
 ## arweave.nyc Switch-Over
 
@@ -25,10 +65,15 @@ usable as the first local scheduler/authority candidate because the node reports
 
 ```env
 NEXT_PUBLIC_AO_WRITE_URL=https://arweave.nyc
+NEXT_PUBLIC_HYPERBEAM_URL=https://arweave.nyc
 NEXT_PUBLIC_AO_MAINNET_SCHEDULER=8VtduyebKx2aJhlg5pIKzvB9Pb6gvTINcTXszCEtKKI
 NEXT_PUBLIC_AO_MAINNET_AUTHORITY=8VtduyebKx2aJhlg5pIKzvB9Pb6gvTINcTXszCEtKKI
 NEXT_PUBLIC_AO_MAINNET_SCHEDULER_DEVICE=scheduler@1.0
 ```
+
+Then re-run the spawn script against that triple and update the mainnet process
+IDs. Operator wallets (e.g. `4QbcnRb5…`) are not interchangeable with the node
+`address` used as `SCHEDULER` unless the node is configured that way.
 
 The public metadata endpoint currently returns JSON when called with:
 
@@ -70,5 +115,5 @@ AO client path supports it, use:
 NEXT_PUBLIC_AO_MAINNET_SCHEDULER_DEVICE=arweave-scheduler@1.0
 ```
 
-Story state is also published with `patch@1.0` from the Lua process so it can
-be exposed through HyperBEAM HTTP state paths instead of old dry-run reads.
+Story state is also published with `patch@1.0` from per-story Lua processes so
+it can be exposed through HyperBEAM HTTP state paths instead of old dry-run reads.

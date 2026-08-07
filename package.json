@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "ao:smoke": "node scripts/smoke-mainnet-connect.mjs",
+    "ao:spawn-mainnet": "node scripts/spawn-mainnet-processes.mjs",
+    "ao:spawn-mainnet:dry": "node scripts/spawn-mainnet-processes.mjs --dry-run"
   },
   "dependencies": {
     "@ar.io/sdk": "^3.6.0",

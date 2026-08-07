@@ -9,10 +9,13 @@ import React, {
 } from "react";
 import {
   getAO,
+  getMainnetAO,
   PROCESS_IDS,
   MAINNET_PROCESS_IDS,
+  createDataItemSigner,
   HAS_EXPLICIT_MAINNET_PROCESS_IDS,
 } from "@/lib/ao-config";
+import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
 import { useWallet } from "@/contexts/WalletContext";
 import { useNetworkMode } from "@/contexts/NetworkModeContext";
 
@@ -59,34 +62,48 @@ export const StoryPointsProcessProvider: React.FC<{
       ? MAINNET_PROCESS_IDS.storyPoints
       : PROCESS_IDS.storyPoints;
 
+  const parseDryrunData = (res: { Messages?: { Data?: unknown }[] }) => {
+    if (res.Messages && res.Messages.length > 0) {
+      const data = res.Messages[0]?.Data;
+      try {
+        return typeof data === "string" ? JSON.parse(data) : data;
+      } catch {
+        return data;
+      }
+    }
+    throw new Error("No messages returned from the process");
+  };
+
   const getDryrunResult = useCallback(
     async (tags: { name: string; value: string }[]) => {
       if (useMainnetPerStoryProcesses) {
         return {};
       }
 
-      if (!useMainnetStoryPointsProcess) {
-        const { dryrun } = getAO();
-        const res = await withTimeout(
-          dryrun({
-            process: processId,
-            tags,
-          }),
-          "AO story points read"
-        );
-        if (res.Messages && res.Messages.length > 0) {
-          const data = res.Messages[0]?.Data;
-          try {
-            return typeof data === "string" ? JSON.parse(data) : data;
-          } catch {
-            return data;
+      if (useMainnetStoryPointsProcess) {
+        try {
+          if (globalThis.arweaveWallet) {
+            const signer = createDataItemSigner(globalThis.arweaveWallet);
+            const ao = getMainnetAO(signer)!;
+            const res = await withTimeout(
+              withHyperbeamGlobalFetch(() =>
+                ao.dryrun({
+                  process: processId,
+                  tags,
+                })
+              ),
+              "AO story points read"
+            );
+            return parseDryrunData(res);
           }
+        } catch (mainnetReadError) {
+          console.warn(
+            "[story-points] mainnet dryrun failed, trying legacy CU",
+            mainnetReadError
+          );
         }
-        throw new Error("No messages returned from the process");
       }
 
-      // Mainnet: avoid HyperBEAM compute/dryrun against legacy processes.
-      // Use legacy CU dry-run API instead (wallet-less, stable).
       const { dryrun } = getAO();
       const res = await withTimeout(
         dryrun({
@@ -95,15 +112,7 @@ export const StoryPointsProcessProvider: React.FC<{
         }),
         "AO story points read"
       );
-      if (res.Messages && res.Messages.length > 0) {
-        const data = res.Messages[0]?.Data;
-        try {
-          return typeof data === "string" ? JSON.parse(data) : data;
-        } catch {
-          return data;
-        }
-      }
-      throw new Error("No messages returned from the process");
+      return parseDryrunData(res);
     },
     [useMainnetPerStoryProcesses, useMainnetStoryPointsProcess, processId]
   );
