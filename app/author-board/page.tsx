@@ -74,7 +74,8 @@ const AuthorBoard: React.FC = () => {
   useEffect(() => {
     const storyMap: Record<string, any[]> = {};
     stories.forEach((story) => {
-      const author = story.version_data.author;
+      const author = story.version_data?.author;
+      if (!author) return;
       if (!storyMap[author]) {
         storyMap[author] = [];
       }
@@ -209,7 +210,7 @@ const AuthorBoard: React.FC = () => {
                           >
                             <IoBookOutline className="text-purple-400 group-hover:text-purple-300" />
                             <span className="text-sm text-gray-300 group-hover:text-purple-300">
-                              {story.version_data.title}
+                              {story.version_data?.title || "Untitled"}
                             </span>
                           </Link>
                         ))}

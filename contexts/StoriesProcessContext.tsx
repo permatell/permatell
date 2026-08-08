@@ -24,6 +24,9 @@ import {
   applyLocalStoryVersion,
   evalPerStoryHandlers,
   fetchHyperbeamStory,
+  isValidCurrentStory,
+  hydrateMainnetDiscoveryStories,
+  indexMainnetDiscoveryStories,
   readStoredMainnetCurrentStories,
   readStoredMainnetStory,
   spawnMainnetStoryProcess,
@@ -220,7 +223,7 @@ export const StoriesProcessProvider: React.FC<{
   }): Promise<CreateStoryResult> => {
     setLoading(true);
     try {
-      if (useMainnetPerStoryProcesses) {
+      if (networkMode === "mainnet") {
         const record = await spawnMainnetStoryProcess({
           title: payload.title,
           content: payload.content,
@@ -229,7 +232,7 @@ export const StoriesProcessProvider: React.FC<{
           category: payload.category,
           creator: address || "",
         });
-        setStories(readStoredMainnetCurrentStories());
+        await getStories();
         const result: CreateStoryResult = {};
         if (payload.mint_atomic_asset) {
           result.atomicAsset = await createStoryAtomicAsset({
@@ -247,27 +250,14 @@ export const StoriesProcessProvider: React.FC<{
         return result;
       }
 
-      if (useMainnetRegistryProcess) {
-        await sendMessage(
-          [
-            { name: "Action", value: "CreateStory" },
-            { name: "title", value: payload.title },
-            { name: "is_public", value: payload.is_public ? "true" : "false" },
-            { name: "cover_image", value: payload.cover_image || "" },
-            { name: "category", value: payload.category || "" },
-          ],
-          payload.content
-        );
-      } else {
-        await sendMessage([
-          { name: "Action", value: "CreateStory" },
-          { name: "title", value: payload.title },
-          { name: "content", value: payload.content },
-          { name: "is_public", value: payload.is_public ? "true" : "false" },
-          { name: "cover_image", value: payload.cover_image || "" },
-          { name: "category", value: payload.category || "" },
-        ]);
-      }
+      await sendMessage([
+        { name: "Action", value: "CreateStory" },
+        { name: "title", value: payload.title },
+        { name: "content", value: payload.content },
+        { name: "is_public", value: payload.is_public ? "true" : "false" },
+        { name: "cover_image", value: payload.cover_image || "" },
+        { name: "category", value: payload.category || "" },
+      ]);
       const result: CreateStoryResult = {};
       if (payload.mint_atomic_asset) {
         result.atomicAsset = await createStoryAtomicAsset({
@@ -394,28 +384,58 @@ export const StoriesProcessProvider: React.FC<{
   const getStories = useCallback(async () => {
     setLoading(true);
     try {
-      const localStories = readStoredMainnetCurrentStories();
-      if (useMainnetPerStoryProcesses) {
-        setStories(localStories);
+      if (networkMode === "mainnet") {
+        const indexed = await indexMainnetDiscoveryStories();
+        setStories(indexed);
+        setLoading(false);
+
+        const mergeAndHydrate = async () => {
+          let nextStories = indexed;
+          if (useMainnetRegistryProcess) {
+            try {
+              const result = await getDryrunResult([
+                { name: "Action", value: "GetStories" },
+              ]);
+              const registryStories = (
+                Array.isArray(result) ? result : []
+              ).filter(isValidCurrentStory);
+              const byId = new Map(
+                registryStories.map((story) => [story.id, story])
+              );
+              for (const story of indexed) {
+                byId.set(story.id, story);
+              }
+              nextStories = Array.from(byId.values());
+              setStories(nextStories);
+            } catch (registryError) {
+              console.warn(
+                "[stories] registry GetStories failed, using per-story Discovery",
+                registryError
+              );
+            }
+          }
+          setStories(await hydrateMainnetDiscoveryStories(nextStories));
+        };
+
+        void mergeAndHydrate().catch((error) =>
+          console.warn("[stories] HyperBEAM Discovery hydrate failed", error)
+        );
         return;
       }
 
       const result = await getDryrunResult([
         { name: "Action", value: "GetStories" },
       ]);
-      const registryStories = Array.isArray(result) ? result : [];
-      const byId = new Map(registryStories.map((story) => [story.id, story]));
-      for (const local of localStories) {
-        if (!byId.has(local.id)) byId.set(local.id, local);
-      }
-      setStories(Array.from(byId.values()));
+      setStories((Array.isArray(result) ? result : []).filter(isValidCurrentStory));
     } catch (error) {
       console.error("Error fetching stories:", error);
-      setStories(readStoredMainnetCurrentStories());
+      setStories(
+        networkMode === "mainnet" ? readStoredMainnetCurrentStories() : []
+      );
     } finally {
       setLoading(false);
     }
-  }, [getDryrunResult, useMainnetPerStoryProcesses]);
+  }, [getDryrunResult, networkMode, useMainnetRegistryProcess]);
 
   const getStory = async (payload: {
     story_id: string;

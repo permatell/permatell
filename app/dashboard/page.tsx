@@ -200,7 +200,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (stories.length > 0) {
       const sorted = [...stories].sort(
-        (a, b) => b.version_data.votes - a.version_data.votes
+        (a, b) => (b.version_data?.votes || 0) - (a.version_data?.votes || 0)
       );
       setTopStories(sorted.slice(0, 3));
     }
@@ -216,14 +216,14 @@ const Dashboard = () => {
     return () => clearInterval(interval);
   }, [topStories.length, isHovering]);
 
-  const filteredStories = stories.filter(
-    (story) =>
-      story.version_data.title
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) &&
-      (selectedCategory === "All" ||
-        story.version_data.category === selectedCategory)
-  );
+  const filteredStories = stories.filter((story) => {
+    const title = story.version_data?.title || "";
+    const category = story.version_data?.category || "";
+    return (
+      title.toLowerCase().includes(searchTerm.toLowerCase()) &&
+      (selectedCategory === "All" || category === selectedCategory)
+    );
+  });
 
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % topStories.length);
@@ -295,9 +295,9 @@ const Dashboard = () => {
                       <div className="md:w-1/3 h-48 md:h-full relative">
                         <img
                           src={safeCoverImageSrc(
-                            topStories[currentSlide].version_data.cover_image
+                            topStories[currentSlide].version_data?.cover_image
                           )}
-                          alt={`Cover for ${topStories[currentSlide].version_data.title}`}
+                          alt={`Cover for ${topStories[currentSlide].version_data?.title || "story"}`}
                           className="absolute inset-0 w-full h-full object-cover"
                         />
                       </div>
@@ -306,17 +306,18 @@ const Dashboard = () => {
                           Featured Stories
                         </h2>
                         <CardTitle className="text-2xl mb-2 bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
-                          {topStories[currentSlide].version_data.title}
+                          {topStories[currentSlide].version_data?.title || "Untitled"}
                         </CardTitle>
                         <p className="text-gray-200 mb-4 line-clamp-3">
-                          {topStories[currentSlide].version_data.description}
+                          {topStories[currentSlide].version_data?.description}
                         </p>
                         <div className="mb-4">
                           <p className="text-sm text-gray-300 italic line-clamp-2">
                             "
-                            {topStories[
-                              currentSlide
-                            ].version_data.content.slice(0, 150)}
+                            {(
+                              topStories[currentSlide].version_data?.content ||
+                              ""
+                            ).slice(0, 150)}
                             ..."
                           </p>
                         </div>
@@ -326,7 +327,7 @@ const Dashboard = () => {
                             className="text-yellow-500 mr-2"
                           />
                           <span className="text-gray-300">
-                            {topStories[currentSlide].version_data.votes} votes
+                            {topStories[currentSlide].version_data?.votes || 0} votes
                           </span>
                         </div>
                         <div className="mt-auto">
@@ -447,6 +448,112 @@ const Dashboard = () => {
         </div>
       </div>
 
+      <h2 className="text-2xl font-semibold mb-4 text-white/90">
+        Find Stories
+      </h2>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="flex gap-4 mb-6"
+      >
+        <Input
+          placeholder="Search for stories..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="flex-grow bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
+        />
+        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+          <SelectTrigger className="w-[180px] bg-black/40 backdrop-blur-md border-gray-800 text-gray-400">
+            <SelectValue placeholder="Select category" />
+          </SelectTrigger>
+          <SelectContent className="border-gray-800">
+            <SelectItem value="All">All Categories</SelectItem>
+            {STORY_CATEGORIES.map((category) => (
+              <SelectItem key={category} value={category}>
+                {category}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </motion.div>
+
+      {loading ? (
+        <div className="flex justify-center items-center py-10">
+          <Spinner className="text-purple-500" />
+        </div>
+      ) : (
+        <motion.section
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4 }}
+          className="mb-10"
+        >
+          {filteredStories.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredStories.map((story, index) => (
+                <motion.div
+                  key={story.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                >
+                  <CardContainer className="overflow-hidden flex flex-col relative h-[280px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-gray-800/50 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
+                    <div className="absolute top-2 right-2 bg-black/80 rounded-full p-1.5 shadow-md flex items-center justify-center z-10">
+                      <IoMdThumbsUp
+                        size={14}
+                        className="text-yellow-500 mr-1"
+                      />
+                      <span className="text-xs font-semibold text-gray-300">
+                        {story.version_data?.votes || 0}
+                      </span>
+                    </div>
+                    <div className="relative h-28">
+                      <img
+                        src={safeCoverImageSrc(story.version_data?.cover_image)}
+                        alt={`Cover for ${story.version_data?.title || "story"}`}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    </div>
+                    <CardHeader className="pb-1 pt-2">
+                      <CardTitle className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent truncate text-base mt-2">
+                        {story.version_data?.title || "Untitled"}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-col flex-grow pt-1">
+                      <div>
+                        <p className="text-xs text-gray-300/90 mb-1">
+                          Last contribution:{" "}
+                          <b className="text-purple-200/90">
+                            {(story.version_data?.author || "Unknown").slice(0, 6)}
+                            ...
+                            {(story.version_data?.author || "Unknown").slice(-4)}
+                          </b>
+                        </p>
+                        <p className="text-xs text-gray-300/90">
+                          Category:{" "}
+                          <b className="text-purple-200/90">
+                            {story.version_data?.category || "Uncategorized"}
+                          </b>
+                        </p>
+                      </div>
+                      <Link href={`/story/${story.id}`} className="mt-auto">
+                        <Button className="w-full bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700 text-sm h-8">
+                          Read Story
+                        </Button>
+                      </Link>
+                    </CardContent>
+                  </CardContainer>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-white/70">No stories found.</p>
+          )}
+        </motion.section>
+      )}
+
       <div className="mb-10">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -557,110 +664,6 @@ const Dashboard = () => {
           </div>
         )}
       </div>
-
-      <h2 className="text-2xl font-semibold mb-4 text-white/90">
-        Find Stories
-      </h2>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="flex gap-4 mb-6"
-      >
-        <Input
-          placeholder="Search for stories..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="flex-grow bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
-        />
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-          <SelectTrigger className="w-[180px] bg-black/40 backdrop-blur-md border-gray-800 text-gray-400">
-            <SelectValue placeholder="Select category" />
-          </SelectTrigger>
-          <SelectContent className="border-gray-800">
-            <SelectItem value="All">All Categories</SelectItem>
-            {STORY_CATEGORIES.map((category) => (
-              <SelectItem key={category} value={category}>
-                {category}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </motion.div>
-
-      {loading ? (
-        <div className="flex justify-center items-center py-10">
-          <Spinner className="text-purple-500" />
-        </div>
-      ) : (
-        <motion.section
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-        >
-          {filteredStories.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredStories.map((story, index) => (
-                <motion.div
-                  key={story.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <CardContainer className="overflow-hidden flex flex-col relative h-[280px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-gray-800/50 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
-                    <div className="absolute top-2 right-2 bg-black/80 rounded-full p-1.5 shadow-md flex items-center justify-center z-10">
-                      <IoMdThumbsUp
-                        size={14}
-                        className="text-yellow-500 mr-1"
-                      />
-                      <span className="text-xs font-semibold text-gray-300">
-                        {story.version_data.votes}
-                      </span>
-                    </div>
-                    <div className="relative h-28">
-                      <img
-                        src={safeCoverImageSrc(story.version_data.cover_image)}
-                        alt={`Cover for ${story.version_data.title}`}
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
-                    </div>
-                    <CardHeader className="pb-1 pt-2">
-                      <CardTitle className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent truncate text-base mt-2">
-                        {story.version_data.title}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex flex-col flex-grow pt-1">
-                      <div>
-                        <p className="text-xs text-gray-300/90 mb-1">
-                          Last contribution:{" "}
-                          <b className="text-purple-200/90">
-                            {story.version_data.author.slice(0, 6)}...
-                            {story.version_data.author.slice(-4)}
-                          </b>
-                        </p>
-                        <p className="text-xs text-gray-300/90">
-                          Category:{" "}
-                          <b className="text-purple-200/90">
-                            {story.version_data.category}
-                          </b>
-                        </p>
-                      </div>
-                      <Link href={`/story/${story.id}`} className="mt-auto">
-                        <Button className="w-full bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700 text-sm h-8">
-                          Read Story
-                        </Button>
-                      </Link>
-                    </CardContent>
-                  </CardContainer>
-                </motion.div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-white/70">No stories found.</p>
-          )}
-        </motion.section>
-      )}
 
     </div>
   );

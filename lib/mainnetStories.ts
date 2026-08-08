@@ -5,6 +5,7 @@ import { createDataItemSigner } from "@permaweb/aoconnect";
 import {
   getHyperbeamWriteUrl,
   getMainnetAO,
+  isAoProcessId,
   MAINNET_DEFAULTS,
 } from "@/lib/ao-config";
 import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
@@ -445,14 +446,39 @@ export async function evalPerStoryHandlers(processId: string): Promise<void> {
   repairedProcessIds.add(processId);
 }
 
-function storyToCurrent(story: Story): CurrentStory {
-  const current = story.versions[story.current_version];
+export function toCurrentStory(story: Story | null | undefined): CurrentStory | null {
+  if (!story?.id) return null;
+  const versions = story.versions || {};
+  const preferred =
+    versions[story.current_version] ||
+    Object.values(versions).sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))[0];
+  if (!preferred && !clean(story.title) && !clean(story.author)) return null;
   return {
     id: story.id,
-    current_version: story.current_version,
-    is_public: story.is_public,
-    version_data: current,
+    current_version: preferred
+      ? String(preferred.id || story.current_version || "1")
+      : story.current_version || "1",
+    is_public: story.is_public !== false,
+    version_data: preferred || {
+      id: Number(story.current_version) || 1,
+      title: story.title || "Untitled",
+      content: "",
+      cover_image: story.cover_image || "",
+      author: story.author || "",
+      timestamp: "",
+      category: "Uncategorized" as StoryCategory,
+      votes: 0,
+    },
   };
+}
+
+export function isValidCurrentStory(story: unknown): story is CurrentStory {
+  const candidate = story as CurrentStory | null;
+  return Boolean(clean(candidate?.id) && clean(candidate?.version_data?.title));
+}
+
+function storyToCurrent(story: Story): CurrentStory | null {
+  return toCurrentStory(story);
 }
 
 export function readStoredMainnetStories(): StoredMainnetStory[] {
@@ -470,7 +496,200 @@ export function readStoredMainnetStory(id: string): Story | null {
 }
 
 export function readStoredMainnetCurrentStories(): CurrentStory[] {
-  return readStoredMainnetStories().map((item) => storyToCurrent(item.story));
+  return readStoredMainnetStories()
+    .map((item) => storyToCurrent(item.story))
+    .filter(isValidCurrentStory);
+}
+
+type DiscoveredStoryProcess = {
+  id: string;
+  title?: string;
+  author?: string;
+  category?: string;
+};
+
+const STORY_PROCESS_GRAPHQL = `
+query DiscoverPermaTellStories($tags: [TagFilter!]!, $first: Int!) {
+  transactions(tags: $tags, first: $first, sort: HEIGHT_DESC) {
+    edges {
+      node {
+        id
+        owner { address }
+        tags { name value }
+      }
+    }
+  }
+}
+`;
+
+function getTagValue(
+  tags: Array<{ name?: string; value?: string }> | undefined,
+  names: string[]
+): string {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  for (const tag of tags || []) {
+    const name = clean(tag?.name).toLowerCase();
+    const value = clean(tag?.value);
+    if (wanted.has(name) && value) return value;
+  }
+  return "";
+}
+
+function currentStoryFromDiscoveryMeta(
+  meta: DiscoveredStoryProcess
+): CurrentStory | null {
+  if (!isAoProcessId(meta.id) || (!clean(meta.title) && !clean(meta.author))) {
+    return null;
+  }
+  return {
+    id: meta.id,
+    current_version: "1",
+    is_public: true,
+    version_data: {
+      id: 1,
+      title: clean(meta.title) || "Untitled",
+      content: "",
+      cover_image: "",
+      author: clean(meta.author),
+      timestamp: "",
+      category: (clean(meta.category) || "Uncategorized") as StoryCategory,
+      votes: 0,
+    },
+  };
+}
+
+async function postGraphql(
+  endpoint: string,
+  variables: Record<string, unknown>
+): Promise<any[] | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: STORY_PROCESS_GRAPHQL, variables }),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.data?.transactions?.edges || [];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Index mainnet per-story processes from localStorage and Arweave GraphQL.
+ * Registry GetStories does not list spawned HyperBEAM story processes.
+ */
+export async function discoverMainnetStoryProcesses(): Promise<
+  DiscoveredStoryProcess[]
+> {
+  const byId = new Map<string, DiscoveredStoryProcess>();
+
+  for (const stored of readStoredMainnetStories()) {
+    if (!isAoProcessId(stored.id)) continue;
+    byId.set(stored.id, {
+      id: stored.id,
+      title: stored.story?.title,
+      author: stored.owner || stored.story?.author,
+      category: stored.story?.versions?.[stored.story.current_version]?.category,
+    });
+  }
+
+  const variables = {
+    first: 50,
+    tags: [
+      { name: "App-Name", values: ["PermaTell"] },
+      { name: "PermaTell-Asset-Type", values: ["story-process"] },
+    ],
+  };
+  const endpoints = [
+    typeof window !== "undefined" ? "/api/arweave/graphql" : "",
+    "https://arweave.net/graphql",
+  ].filter(Boolean);
+
+  for (const endpoint of endpoints) {
+    const edges = await postGraphql(endpoint, variables);
+    if (!edges) continue;
+    for (const edge of edges) {
+      const id = clean(edge?.node?.id);
+      if (!isAoProcessId(id)) continue;
+      const tags = edge?.node?.tags || [];
+      const existing = byId.get(id);
+      byId.set(id, {
+        id,
+        title:
+          existing?.title ||
+          getTagValue(tags, ["Title", "Name", "Bootloader-Title"]),
+        author:
+          existing?.author ||
+          getTagValue(tags, ["Creator", "Bootloader-Creator"]) ||
+          clean(edge?.node?.owner?.address),
+        category:
+          existing?.category ||
+          getTagValue(tags, [
+            "PermaTell-Category",
+            "Bootloader-Category",
+            "Category",
+          ]),
+      });
+    }
+    break;
+  }
+
+  return [...byId.values()];
+}
+
+export async function indexMainnetDiscoveryStories(): Promise<CurrentStory[]> {
+  const byId = new Map<string, CurrentStory>();
+
+  for (const local of readStoredMainnetCurrentStories()) {
+    byId.set(local.id, local);
+  }
+
+  const discovered = await discoverMainnetStoryProcesses();
+  for (const meta of discovered) {
+    if (byId.has(meta.id)) continue;
+    const stub = currentStoryFromDiscoveryMeta(meta);
+    if (stub) byId.set(meta.id, stub);
+  }
+
+  return [...byId.values()].filter(isValidCurrentStory);
+}
+
+export async function hydrateMainnetDiscoveryStories(
+  stories?: CurrentStory[]
+): Promise<CurrentStory[]> {
+  const indexed = stories?.length
+    ? stories
+    : await indexMainnetDiscoveryStories();
+  const byId = new Map(indexed.map((story) => [story.id, story]));
+
+  await Promise.all(
+    indexed.map(async (story) => {
+      if (!isAoProcessId(story.id)) return;
+      try {
+        const remote = await fetchHyperbeamStory(story.id);
+        const current = toCurrentStory(remote);
+        if (current) byId.set(story.id, current);
+      } catch (error) {
+        console.warn("[stories] HyperBEAM discovery read failed", story.id, error);
+      }
+    })
+  );
+
+  return [...byId.values()].filter(isValidCurrentStory);
+}
+
+export async function loadMainnetDiscoveryStories(): Promise<CurrentStory[]> {
+  return hydrateMainnetDiscoveryStories(await indexMainnetDiscoveryStories());
 }
 
 function rememberMainnetStory(record: StoredMainnetStory) {
