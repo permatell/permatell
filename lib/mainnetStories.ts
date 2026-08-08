@@ -85,50 +85,55 @@ function getWallet(): any {
   return wallet;
 }
 
-function buildStoryLua(input: MainnetStoryInput): string {
-  const timestamp = nowSeconds();
-  const title = clean(input.title);
-  const content = input.content || "";
-  const coverImage = clean(input.cover_image);
-  const category = clean(input.category);
-  const isPublic = input.is_public ? "true" : "false";
-
-  return `
-local Story = {
-  id = ao.id,
-  current_version = "1",
-  is_public = ${isPublic},
-  versions = {
-    ["1"] = {
-      id = 1,
-      title = ${luaString(title)},
-      content = ${luaString(content)},
-      cover_image = ${luaString(coverImage)},
-      author = ${luaString(input.creator)},
-      timestamp = ${timestamp},
-      category = ${luaString(category)},
-      votes = 0
-    }
-  }
-}
+/**
+ * Shared per-story handlers. Relies on a global `Story` table.
+ * Reads Action fields from msg.* or msg.Tags (HyperBEAM relay often only
+ * puts them in Tags). Patches `versions` explicitly so new version keys
+ * survive HyperBEAM patch@1.0 shallow merges.
+ */
+const STORY_HANDLER_LUA = `
+local function msg_value(msg, name)
+  local direct = msg[name]
+  if type(direct) == "string" and direct ~= "" then return direct end
+  if type(direct) == "number" then return tostring(direct) end
+  local tags = msg.Tags
+  if type(tags) ~= "table" then return nil end
+  local mapped = tags[name]
+  if type(mapped) == "string" and mapped ~= "" then return mapped end
+  for _, tag in ipairs(tags) do
+    if type(tag) == "table" then
+      local tagName = tag.name or tag.Name
+      local tagValue = tag.value or tag.Value
+      if tagName == name and type(tagValue) == "string" and tagValue ~= "" then
+        return tagValue
+      end
+    end
+  end
+  return nil
+end
 
 local function story_content(msg)
   if type(msg.Data) == "string" and msg.Data ~= "" then
     return msg.Data
   end
-  if type(msg.content) == "string" and msg.content ~= "" then
-    return msg.content
+  local tagged = msg_value(msg, "content")
+  if type(tagged) == "string" and tagged ~= "" then
+    return tagged
   end
   return ""
 end
 
 local function publish_story_state()
   pcall(function()
+    local current = Story.versions[Story.current_version] or {}
     Send({
       device = "patch@1.0",
       story = Story,
+      versions = Story.versions,
       current_version = Story.current_version,
-      is_public = Story.is_public
+      is_public = Story.is_public,
+      title = current.title or Story.id,
+      name = current.title or "PermaTell Story"
     })
   end)
 end
@@ -144,13 +149,15 @@ local function generate_new_version_id(story)
   return tostring(max_id + 1)
 end
 
-publish_story_state()
-
 Handlers.add("create_story_version",
   { Action = "CreateStoryVersion" },
   function(msg)
-    local new_version_id = generate_new_version_id(Story)
     local current_version = Story.versions[Story.current_version]
+    if not current_version then
+      ao.send({ Target = msg.From, Data = "Story version not found!" })
+      return
+    end
+    local new_version_id = generate_new_version_id(Story)
     local next_content = story_content(msg)
     if next_content == "" then
       next_content = current_version.content
@@ -158,12 +165,12 @@ Handlers.add("create_story_version",
     Story.current_version = new_version_id
     Story.versions[new_version_id] = {
       id = tonumber(new_version_id),
-      title = msg.title or current_version.title,
+      title = msg_value(msg, "title") or current_version.title,
       content = next_content,
-      cover_image = msg.cover_image or current_version.cover_image,
+      cover_image = msg_value(msg, "cover_image") or current_version.cover_image,
       author = msg.From,
       timestamp = os.time(),
-      category = msg.category or current_version.category,
+      category = msg_value(msg, "category") or current_version.category,
       votes = 0
     }
     publish_story_state()
@@ -174,10 +181,11 @@ Handlers.add("create_story_version",
 Handlers.add("revert_story_to_version",
   { Action = "RevertStoryToVersion" },
   function(msg)
-    if Story.versions[msg.version_id] then
-      Story.current_version = msg.version_id
+    local version_id = msg_value(msg, "version_id")
+    if version_id and Story.versions[version_id] then
+      Story.current_version = version_id
       publish_story_state()
-      ao.send({ Target = msg.From, Data = "Story reverted to version: " .. msg.version_id })
+      ao.send({ Target = msg.From, Data = "Story reverted to version: " .. version_id })
     else
       ao.send({ Target = msg.From, Data = "Story version not found!" })
     end
@@ -194,16 +202,247 @@ Handlers.add("get_story",
 Handlers.add("upvote_story_version",
   { Action = "UpvoteStoryVersion" },
   function(msg)
-    if Story.versions[msg.version_id] then
-      Story.versions[msg.version_id].votes = (Story.versions[msg.version_id].votes or 0) + 1
+    local version_id = msg_value(msg, "version_id")
+    if version_id and Story.versions[version_id] then
+      Story.versions[version_id].votes = (Story.versions[version_id].votes or 0) + 1
       publish_story_state()
-      ao.send({ Target = msg.From, Data = "Upvote successful for story " .. ao.id .. ", version " .. msg.version_id })
+      ao.send({ Target = msg.From, Data = "Upvote successful for story " .. ao.id .. ", version " .. version_id })
     else
       ao.send({ Target = msg.From, Data = "Story version not found!" })
     end
   end
 )
+
+publish_story_state()
 `;
+
+function buildStoryLua(input: MainnetStoryInput): string {
+  const timestamp = nowSeconds();
+  const title = clean(input.title);
+  const content = input.content || "";
+  const coverImage = clean(input.cover_image);
+  const category = clean(input.category);
+  const isPublic = input.is_public ? "true" : "false";
+
+  return `
+Story = {
+  id = ao.id,
+  current_version = "1",
+  is_public = ${isPublic},
+  versions = {
+    ["1"] = {
+      id = 1,
+      title = ${luaString(title)},
+      content = ${luaString(content)},
+      cover_image = ${luaString(coverImage)},
+      author = ${luaString(input.creator)},
+      timestamp = ${timestamp},
+      category = ${luaString(category)},
+      votes = 0
+    }
+  }
+}
+${STORY_HANDLER_LUA}
+`;
+}
+
+function buildStoryTableLua(story: Story): string {
+  const versions = Object.entries(story.versions || {})
+    .map(([id, version]) => {
+      const timestamp = Number(version.timestamp);
+      return `    [${luaString(id)}] = {
+      id = ${Number(version.id) || Number(id) || 0},
+      title = ${luaString(version.title)},
+      content = ${luaString(version.content || "")},
+      cover_image = ${luaString(version.cover_image || "")},
+      author = ${luaString(version.author || "")},
+      timestamp = ${Number.isFinite(timestamp) ? timestamp : nowSeconds()},
+      category = ${luaString(version.category || "Uncategorized")},
+      votes = ${Number(version.votes) || 0}
+    }`;
+    })
+    .join(",\n");
+
+  return `Story = {
+  id = ao.id,
+  current_version = ${luaString(story.current_version || "1")},
+  is_public = ${story.is_public ? "true" : "false"},
+  versions = {
+${versions}
+  }
+}`;
+}
+
+/** Reinstall handlers. Prefer seeding from HyperBEAM /now so old closure-scoped Story is not lost. */
+function buildStoryRepairLua(seed?: Story | null): string {
+  const seedLua =
+    seed && Object.keys(seed.versions || {}).length
+      ? buildStoryTableLua(seed)
+      : `if type(Story) ~= "table" then
+  Story = {
+    id = ao.id,
+    current_version = "1",
+    is_public = true,
+    versions = {}
+  }
+end
+if type(Story.versions) ~= "table" then
+  Story.versions = {}
+end`;
+
+  return `
+${seedLua}
+${STORY_HANDLER_LUA}
+`;
+}
+
+const repairedProcessIds = new Set<string>();
+
+async function fetchHbJson(url: string, timeoutMs = 8_000): Promise<any | null> {
+  if (typeof window === "undefined") return null;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function versionIdsFromLinks(data: Record<string, unknown> | null | undefined): string[] {
+  const ids = new Set<string>();
+  for (const key of Object.keys(data || {})) {
+    const match = key.match(/^(\d+)\+link$/);
+    if (match) ids.add(match[1]);
+  }
+  return [...ids];
+}
+
+function parseStoryVersion(raw: any, fallbackId: string): Story["versions"][string] | null {
+  if (!raw || raw.body === "not_found" || Number(raw.status) === 404) return null;
+  const title = clean(raw.title);
+  const content = typeof raw.content === "string" ? raw.content : "";
+  if (!title && !content && raw.id == null) return null;
+  return {
+    id: Number(raw.id ?? fallbackId) || Number(fallbackId) || 0,
+    title,
+    content,
+    cover_image: clean(raw.cover_image),
+    author: clean(raw.author),
+    timestamp: String(raw.timestamp ?? ""),
+    category: (clean(raw.category) || "Uncategorized") as StoryCategory,
+    votes: Number(raw.votes || 0),
+  };
+}
+
+function rememberFetchedStory(story: Story, extra?: Partial<StoredMainnetStory>) {
+  const existing = readStoredMainnetStories().find((item) => item.id === story.id);
+  rememberMainnetStory({
+    id: story.id,
+    owner: extra?.owner || existing?.owner || story.author || "",
+    scheduler: extra?.scheduler || existing?.scheduler || clean(MAINNET_DEFAULTS.scheduler),
+    nodeUrl: extra?.nodeUrl || existing?.nodeUrl || getHyperbeamWriteUrl(),
+    createdAt: extra?.createdAt || existing?.createdAt || new Date().toISOString(),
+    story,
+  });
+}
+
+export async function fetchHyperbeamStory(processId: string): Promise<Story | null> {
+  const id = clean(processId);
+  if (!id) return null;
+  const base = getHyperbeamWriteUrl().replace(/\/+$/, "");
+  const now = await fetchHbJson(`${base}/${id}~process@1.0/now`);
+  if (!now || now.body === "not_found") return null;
+
+  const storyNow = await fetchHbJson(`${base}/${id}~process@1.0/now/story`);
+  const versionsIndex = await fetchHbJson(
+    `${base}/${id}~process@1.0/now/story/versions`
+  );
+  const currentVersion = String(
+    storyNow?.current_version || now.current_version || "1"
+  );
+  const linkedIds = versionIdsFromLinks(versionsIndex);
+  const maxProbe = Math.max(
+    1,
+    Number(currentVersion) || 1,
+    ...linkedIds.map((value) => Number(value) || 0)
+  );
+  const ids = new Set<string>([
+    ...linkedIds,
+    ...Array.from({ length: maxProbe }, (_, index) => String(index + 1)),
+  ]);
+
+  const versions: Story["versions"] = {};
+  await Promise.all(
+    [...ids].map(async (versionId) => {
+      const raw = await fetchHbJson(
+        `${base}/${id}~process@1.0/now/story/versions/${versionId}`
+      );
+      const parsed = parseStoryVersion(raw, versionId);
+      if (parsed) versions[versionId] = parsed;
+    })
+  );
+
+  if (!Object.keys(versions).length) return null;
+
+  let resolvedCurrent = currentVersion;
+  if (!versions[resolvedCurrent]) {
+    const available = Object.keys(versions).sort(
+      (a, b) => Number(a) - Number(b)
+    );
+    resolvedCurrent = available[available.length - 1] || "1";
+  }
+
+  const current = versions[resolvedCurrent];
+  const story: Story = {
+    id,
+    title: current?.title || clean(now.title) || clean(now.name) || "Untitled",
+    cover_image: current?.cover_image || "",
+    author:
+      current?.author ||
+      clean(now.creator) ||
+      clean(now["bootloader-creator"]) ||
+      "",
+    current_version: resolvedCurrent,
+    is_public: String(storyNow?.is_public ?? now.is_public ?? "true") !== "false",
+    versions,
+  };
+  rememberFetchedStory(story, {
+    owner: story.author,
+    scheduler: clean(now.scheduler) || undefined,
+    nodeUrl: base,
+  });
+  return story;
+}
+
+export async function evalPerStoryHandlers(processId: string): Promise<void> {
+  if (repairedProcessIds.has(processId)) return;
+  const seed =
+    (await fetchHyperbeamStory(processId)) || readStoredMainnetStory(processId);
+  const wallet = getWallet();
+  const signer = createDataItemSigner(wallet);
+  const ao = getMainnetAO(signer)!;
+  await withHyperbeamGlobalFetch(() =>
+    ao.message({
+      process: processId,
+      signer,
+      tags: [
+        { name: "Data-Protocol", value: "ao" },
+        { name: "Action", value: "Eval" },
+        { name: "Message-Timestamp", value: Date.now().toString() },
+      ],
+      data: buildStoryRepairLua(seed),
+    })
+  );
+  repairedProcessIds.add(processId);
 }
 
 function storyToCurrent(story: Story): CurrentStory {

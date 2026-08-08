@@ -22,6 +22,8 @@ import {
 import {
   applyLocalStoryUpvote,
   applyLocalStoryVersion,
+  evalPerStoryHandlers,
+  fetchHyperbeamStory,
   readStoredMainnetCurrentStories,
   readStoredMainnetStory,
   spawnMainnetStoryProcess,
@@ -298,6 +300,7 @@ export const StoriesProcessProvider: React.FC<{
     setLoading(true);
     try {
       if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
+        await evalPerStoryHandlers(payload.story_id);
         await sendMessage(
           [
             { name: "Action", value: "CreateStoryVersion" },
@@ -316,6 +319,8 @@ export const StoriesProcessProvider: React.FC<{
           author: address || undefined,
         });
         if (updated) setCurrentStory(updated);
+        const remote = await fetchHyperbeamStory(payload.story_id);
+        if (remote) setCurrentStory(remote);
         await getStories();
         return;
       }
@@ -357,6 +362,7 @@ export const StoriesProcessProvider: React.FC<{
     setLoading(true);
     try {
       if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
+        await evalPerStoryHandlers(payload.story_id);
         await sendMessage(
           [
             { name: "Action", value: "RevertStoryToVersion" },
@@ -365,6 +371,8 @@ export const StoriesProcessProvider: React.FC<{
           undefined,
           payload.story_id
         );
+        const remote = await fetchHyperbeamStory(payload.story_id);
+        if (remote) setCurrentStory(remote);
         await getStories();
         return;
       }
@@ -415,6 +423,12 @@ export const StoriesProcessProvider: React.FC<{
     setLoading(true);
     try {
       if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
+        try {
+          const remote = await fetchHyperbeamStory(payload.story_id);
+          if (remote) return remote;
+        } catch (error) {
+          console.warn("[stories] HyperBEAM story read failed", error);
+        }
         const local = readStoredMainnetStory(payload.story_id);
         if (local) return local;
         if (useMainnetPerStoryProcesses) return null;
@@ -443,6 +457,7 @@ export const StoriesProcessProvider: React.FC<{
     setLoading(true);
     try {
       if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
+        await evalPerStoryHandlers(payload.story_id);
         await sendMessage(
           [
             { name: "Action", value: "UpvoteStoryVersion" },
@@ -453,6 +468,8 @@ export const StoriesProcessProvider: React.FC<{
         );
         const updated = applyLocalStoryUpvote(payload.story_id, payload.version_id);
         if (updated) setCurrentStory(updated);
+        const remote = await fetchHyperbeamStory(payload.story_id);
+        if (remote) setCurrentStory(remote);
         await getStories();
         return;
       }

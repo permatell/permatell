@@ -15,11 +15,13 @@ and authority must belong to the same node/operator setup.
    hardcodes `/{id}~process@1.0/push`; the browser fetch wrapper rewrites that
    to `~relay@1.0/push` on the write node and **never** retries hung Portal
    `/push`.
-3. **Browser reads** — HyperBEAM dryrun when a wallet is present; legacy CU
-   dryrun as fallback. Registry IDs are used when
-   `NEXT_PUBLIC_MAINNET_*_PROCESS_ID` are set. Existing per-story processes
-   (story id looks like an AO process id) still receive edit/upvote on that
-   process, not the registry.
+3. **Browser reads** — per-story processes are read from HyperBEAM
+   `/{id}~process@1.0/now` (and `/now/story/versions/{n}`), not only
+   localStorage. Registry IDs still use HyperBEAM dryrun when a wallet is
+   present, with legacy CU as fallback. Existing per-story processes (story id
+   looks like an AO process id) still receive edit/upvote on that process, not
+   the registry. The first edit/upvote also Eval-repairs handlers so older
+   spawns (e.g. POMP Story `hJ7Intf…`) can still version.
 4. **Legacy toggle** — remains available unless `NEXT_PUBLIC_AO_LOCK_NETWORK=true`.
 
 Never commit JWKs or `.env.local`.
@@ -74,10 +76,20 @@ Paste the printed process IDs into Vercel env and redeploy. Prefer the printed
 `NEXT_PUBLIC_AO_WRITE_URL` from a successful spawn. Vercel must also set:
 
 ```env
+NEXT_PUBLIC_AO_MODE=mainnet
 NEXT_PUBLIC_AO_WRITE_URL=https://app-1.forward.computer
 NEXT_PUBLIC_HYPERBEAM_URL=https://app-1.forward.computer
 NEXT_PUBLIC_AO_MAINNET_DEVICE=relay@1.0
+NEXT_PUBLIC_AO_MAINNET_SCHEDULER=n_XZJhUnmldNFo4dhajoPZWhBXuJk-OcQr5JQ49c4Zo
+NEXT_PUBLIC_AO_MAINNET_AUTHORITY=a5ZMUKbGClAsKzB4SHDYrwkOZZHIIfpbaxrmKwUHCe8
+NEXT_PUBLIC_MAINNET_STORIES_PROCESS_ID=r-tsuNhTP6nl4j-Wc9qYV-_1oeTxamVZ1jUe0Nuf90E
+NEXT_PUBLIC_MAINNET_STORYPOINTS_PROCESS_ID=hPJ24tP3ws-eIk28UBq8-aQiCOhTnzH3MzjJ_8AzUBk
 ```
+
+Production is https://permatell.vercel.app. A hashed chunk like
+`1396-54bc1c820ac90e19.js` is a stale Vercel build; after redeploy the hash
+changes (current production already includes `app-1` + `relay@1.0`). Local
+`npm run dev` still needs a restart after `.env.local` changes.
 
 ## arweave.nyc Switch-Over
 

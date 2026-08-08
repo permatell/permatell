@@ -26,6 +26,7 @@ import ReactMarkdown from "react-markdown";
 import { BiNetworkChart } from "react-icons/bi";
 import { useRouter } from "next/navigation";
 import { isCompleteHttpUrl, safeCoverImageSrc } from "@/lib/utils";
+import { toast } from "sonner";
 
 const StoryPage = () => {
   const {
@@ -112,6 +113,9 @@ const StoryPage = () => {
       setIsEditing(false);
     } catch (error) {
       console.error("Error updating story:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save story version"
+      );
     } finally {
       setIsSaving(false);
     }
@@ -129,6 +133,9 @@ const StoryPage = () => {
       await fetchStory(currentStory.id);
     } catch (error) {
       console.error("Error reverting story:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to revert story version"
+      );
     } finally {
       setIsReverting(false);
     }
@@ -161,6 +168,7 @@ const StoryPage = () => {
       await fetchStory(currentStory.id);
     } catch (error) {
       console.error("Error upvoting story:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to upvote");
     } finally {
       setIsUpvoting(false);
     }
