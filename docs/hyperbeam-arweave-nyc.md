@@ -15,15 +15,17 @@ and authority must belong to the same node/operator setup.
    hardcodes `/{id}~process@1.0/push`; the browser fetch wrapper rewrites that
    to `~relay@1.0/push` on the write node and **never** retries hung Portal
    `/push`.
-3. **Browser reads** — Discovery lists mainnet per-story processes from
-   localStorage plus Arweave GraphQL (`App-Name=PermaTell`,
-   `PermaTell-Asset-Type=story-process`), then hydrates each id from HyperBEAM
-   `/{id}~process@1.0/now` (and `/now/story/versions/{n}`). Registry GetStories
-   is still merged when a wallet is present, but create no longer depends on
-   `r-tsuNh…` because spawned story processes are not stored there. Existing
-   per-story ids still receive edit/upvote on that process. The first
-   edit/upvote also Eval-repairs handlers so older spawns (e.g. POMP Story
-   `hJ7Intf…`) can still version.
+3. **Browser reads** — Discovery lists mainnet per-story processes from a
+   hard-coded seed (POMP Story `hJ7Intf…`), localStorage, and Arweave GraphQL
+   (`App-Name=PermaTell` + `PermaTell-Asset-Type=story-process`, with
+   `Zone-Type=Story` fallback). Each id is hydrated from HyperBEAM
+   `/{id}~process@1.0/now` on app-1 (and `/now/story/versions/{n}`). If version
+   JSON is missing, `/now` title/creator headers still produce a Discovery card.
+   Registry GetStories is still merged when a wallet is present, but create no
+   longer depends on `r-tsuNh…` because spawned story processes are not stored
+   there. Existing per-story ids still receive edit/upvote on that process. The
+   first edit/upvote also Eval-repairs handlers so older spawns (e.g. POMP Story)
+   can still version.
 4. **Legacy toggle** — remains available unless `NEXT_PUBLIC_AO_LOCK_NETWORK=true`.
 
 Never commit JWKs or `.env.local`.

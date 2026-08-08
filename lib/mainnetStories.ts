@@ -3,10 +3,12 @@
 import "@/lib/buffer-base64url";
 import { createDataItemSigner } from "@permaweb/aoconnect";
 import {
+  DEFAULT_HYPERBEAM_WRITE_URL,
   getHyperbeamWriteUrl,
   getMainnetAO,
   isAoProcessId,
   MAINNET_DEFAULTS,
+  normalizeHyperbeamUrl,
 } from "@/lib/ao-config";
 import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
 import type { CurrentStory, Story } from "@/interfaces/Story";
@@ -299,6 +301,18 @@ ${STORY_HANDLER_LUA}
 
 const repairedProcessIds = new Set<string>();
 
+function getHyperbeamReadUrls(): string[] {
+  const urls = [
+    getHyperbeamWriteUrl(),
+    DEFAULT_HYPERBEAM_WRITE_URL,
+    normalizeHyperbeamUrl(process.env.NEXT_PUBLIC_HYPERBEAM_URL),
+    normalizeHyperbeamUrl(process.env.NEXT_PUBLIC_AO_WRITE_URL),
+  ]
+    .map((url) => url.replace(/\/+$/, ""))
+    .filter(Boolean);
+  return [...new Set(urls)];
+}
+
 async function fetchHbJson(url: string, timeoutMs = 8_000): Promise<any | null> {
   if (typeof window === "undefined") return null;
   const controller = new AbortController();
@@ -310,12 +324,63 @@ async function fetchHbJson(url: string, timeoutMs = 8_000): Promise<any | null> 
       cache: "no-store",
     });
     if (!res.ok) return null;
-    return await res.json();
+    const text = await res.text();
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      const title = text.replace(/\s+/g, " ").trim();
+      return title ? { title, name: title } : null;
+    }
   } catch {
     return null;
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+function storyFromNowMetadata(
+  processId: string,
+  now: Record<string, any> | null | undefined
+): Story | null {
+  if (!now || now.body === "not_found") return null;
+  const title =
+    clean(now.title) ||
+    clean(now.name) ||
+    clean(now["bootloader-title"]) ||
+    clean(now["Bootloader-Title"]);
+  const author =
+    clean(now.creator) ||
+    clean(now["bootloader-creator"]) ||
+    clean(now["Bootloader-Creator"]) ||
+    clean(now.author);
+  if (!title && !author) return null;
+  const currentVersion = String(now.current_version || "1");
+  const category =
+    clean(now["permatell-category"]) ||
+    clean(now["bootloader-category"]) ||
+    clean(now.category) ||
+    "Uncategorized";
+  return {
+    id: processId,
+    title: title || "Untitled",
+    cover_image: clean(now.cover_image) || clean(now["bootloader-cover-image"]),
+    author,
+    current_version: currentVersion,
+    is_public: String(now.is_public ?? now["bootloader-is-public"] ?? "true") !== "false",
+    versions: {
+      [currentVersion]: {
+        id: Number(currentVersion) || 1,
+        title: title || "Untitled",
+        content: typeof now.content === "string" ? now.content : "",
+        cover_image: clean(now.cover_image) || clean(now["bootloader-cover-image"]),
+        author,
+        timestamp: String(now.timestamp || now["process-timestamp"] || ""),
+        category: category as StoryCategory,
+        votes: Number(now.votes || 0),
+      },
+    },
+  };
 }
 
 function versionIdsFromLinks(data: Record<string, unknown> | null | undefined): string[] {
@@ -359,69 +424,87 @@ function rememberFetchedStory(story: Story, extra?: Partial<StoredMainnetStory>)
 export async function fetchHyperbeamStory(processId: string): Promise<Story | null> {
   const id = clean(processId);
   if (!id) return null;
-  const base = getHyperbeamWriteUrl().replace(/\/+$/, "");
-  const now = await fetchHbJson(`${base}/${id}~process@1.0/now`);
-  if (!now || now.body === "not_found") return null;
 
-  const storyNow = await fetchHbJson(`${base}/${id}~process@1.0/now/story`);
-  const versionsIndex = await fetchHbJson(
-    `${base}/${id}~process@1.0/now/story/versions`
-  );
-  const currentVersion = String(
-    storyNow?.current_version || now.current_version || "1"
-  );
-  const linkedIds = versionIdsFromLinks(versionsIndex);
-  const maxProbe = Math.max(
-    1,
-    Number(currentVersion) || 1,
-    ...linkedIds.map((value) => Number(value) || 0)
-  );
-  const ids = new Set<string>([
-    ...linkedIds,
-    ...Array.from({ length: maxProbe }, (_, index) => String(index + 1)),
-  ]);
+  let lastNow: Record<string, any> | null = null;
+  let lastBase = "";
 
-  const versions: Story["versions"] = {};
-  await Promise.all(
-    [...ids].map(async (versionId) => {
-      const raw = await fetchHbJson(
-        `${base}/${id}~process@1.0/now/story/versions/${versionId}`
-      );
-      const parsed = parseStoryVersion(raw, versionId);
-      if (parsed) versions[versionId] = parsed;
-    })
-  );
+  for (const base of getHyperbeamReadUrls()) {
+    const now = await fetchHbJson(`${base}/${id}~process@1.0/now`);
+    if (!now || now.body === "not_found") continue;
+    lastNow = now;
+    lastBase = base;
 
-  if (!Object.keys(versions).length) return null;
-
-  let resolvedCurrent = currentVersion;
-  if (!versions[resolvedCurrent]) {
-    const available = Object.keys(versions).sort(
-      (a, b) => Number(a) - Number(b)
+    const storyNow = await fetchHbJson(`${base}/${id}~process@1.0/now/story`);
+    const versionsIndex = await fetchHbJson(
+      `${base}/${id}~process@1.0/now/story/versions`
     );
-    resolvedCurrent = available[available.length - 1] || "1";
+    const currentVersion = String(
+      storyNow?.current_version || now.current_version || "1"
+    );
+    const linkedIds = versionIdsFromLinks(versionsIndex);
+    const maxProbe = Math.max(
+      1,
+      Number(currentVersion) || 1,
+      ...linkedIds.map((value) => Number(value) || 0)
+    );
+    const ids = new Set<string>([
+      ...linkedIds,
+      ...Array.from({ length: maxProbe }, (_, index) => String(index + 1)),
+    ]);
+
+    const versions: Story["versions"] = {};
+    await Promise.all(
+      [...ids].map(async (versionId) => {
+        const raw = await fetchHbJson(
+          `${base}/${id}~process@1.0/now/story/versions/${versionId}`
+        );
+        const parsed = parseStoryVersion(raw, versionId);
+        if (parsed) versions[versionId] = parsed;
+      })
+    );
+
+    if (!Object.keys(versions).length) continue;
+
+    let resolvedCurrent = currentVersion;
+    if (!versions[resolvedCurrent]) {
+      const available = Object.keys(versions).sort(
+        (a, b) => Number(a) - Number(b)
+      );
+      resolvedCurrent = available[available.length - 1] || "1";
+    }
+
+    const current = versions[resolvedCurrent];
+    const story: Story = {
+      id,
+      title: current?.title || clean(now.title) || clean(now.name) || "Untitled",
+      cover_image: current?.cover_image || "",
+      author:
+        current?.author ||
+        clean(now.creator) ||
+        clean(now["bootloader-creator"]) ||
+        "",
+      current_version: resolvedCurrent,
+      is_public: String(storyNow?.is_public ?? now.is_public ?? "true") !== "false",
+      versions,
+    };
+    rememberFetchedStory(story, {
+      owner: story.author,
+      scheduler: clean(now.scheduler) || undefined,
+      nodeUrl: base,
+    });
+    return story;
   }
 
-  const current = versions[resolvedCurrent];
-  const story: Story = {
-    id,
-    title: current?.title || clean(now.title) || clean(now.name) || "Untitled",
-    cover_image: current?.cover_image || "",
-    author:
-      current?.author ||
-      clean(now.creator) ||
-      clean(now["bootloader-creator"]) ||
-      "",
-    current_version: resolvedCurrent,
-    is_public: String(storyNow?.is_public ?? now.is_public ?? "true") !== "false",
-    versions,
-  };
-  rememberFetchedStory(story, {
-    owner: story.author,
-    scheduler: clean(now.scheduler) || undefined,
-    nodeUrl: base,
-  });
-  return story;
+  const fallback = storyFromNowMetadata(id, lastNow);
+  if (fallback) {
+    rememberFetchedStory(fallback, {
+      owner: fallback.author,
+      scheduler: clean(lastNow?.scheduler) || undefined,
+      nodeUrl: lastBase,
+    });
+    return fallback;
+  }
+  return null;
 }
 
 export async function evalPerStoryHandlers(processId: string): Promise<void> {
@@ -508,6 +591,16 @@ type DiscoveredStoryProcess = {
   category?: string;
 };
 
+/** Known mainnet per-story processes that must appear in Discovery even if GraphQL/localStorage lag. */
+const SEEDED_MAINNET_STORIES: DiscoveredStoryProcess[] = [
+  {
+    id: "hJ7Intf25bH2h70lN4y1P1VcKC9rYQ4RTU1uklvyM5M",
+    title: "POMP Story",
+    author: "n43BPVPwpQZelVa3lXECIUv65sh69RlvDID0eNzRE9k",
+    category: "Web3",
+  },
+];
+
 const STORY_PROCESS_GRAPHQL = `
 query DiscoverPermaTellStories($tags: [TagFilter!]!, $first: Int!) {
   transactions(tags: $tags, first: $first, sort: HEIGHT_DESC) {
@@ -584,6 +677,40 @@ async function postGraphql(
   }
 }
 
+function persistSeededMainnetStories() {
+  if (typeof window === "undefined") return;
+  for (const seed of SEEDED_MAINNET_STORIES) {
+    if (!isAoProcessId(seed.id) || readStoredMainnetStory(seed.id)) continue;
+    rememberMainnetStory({
+      id: seed.id,
+      owner: seed.author || "",
+      scheduler: clean(MAINNET_DEFAULTS.scheduler),
+      nodeUrl: getHyperbeamWriteUrl(),
+      createdAt: new Date().toISOString(),
+      story: {
+        id: seed.id,
+        title: seed.title || "Untitled",
+        cover_image: "",
+        author: seed.author || "",
+        current_version: "1",
+        is_public: true,
+        versions: {
+          "1": {
+            id: 1,
+            title: seed.title || "Untitled",
+            content: "",
+            cover_image: "",
+            author: seed.author || "",
+            timestamp: "",
+            category: (seed.category || "Uncategorized") as StoryCategory,
+            votes: 0,
+          },
+        },
+      },
+    });
+  }
+}
+
 /**
  * Index mainnet per-story processes from localStorage and Arweave GraphQL.
  * Registry GetStories does not list spawned HyperBEAM story processes.
@@ -593,55 +720,70 @@ export async function discoverMainnetStoryProcesses(): Promise<
 > {
   const byId = new Map<string, DiscoveredStoryProcess>();
 
+  persistSeededMainnetStories();
+
+  for (const seed of SEEDED_MAINNET_STORIES) {
+    if (!isAoProcessId(seed.id)) continue;
+    byId.set(seed.id, { ...seed });
+  }
+
   for (const stored of readStoredMainnetStories()) {
     if (!isAoProcessId(stored.id)) continue;
+    const existing = byId.get(stored.id);
     byId.set(stored.id, {
       id: stored.id,
-      title: stored.story?.title,
-      author: stored.owner || stored.story?.author,
-      category: stored.story?.versions?.[stored.story.current_version]?.category,
+      title: existing?.title || stored.story?.title,
+      author: existing?.author || stored.owner || stored.story?.author,
+      category:
+        existing?.category ||
+        stored.story?.versions?.[stored.story.current_version]?.category,
     });
   }
 
-  const variables = {
-    first: 50,
-    tags: [
+  const tagSets = [
+    [
       { name: "App-Name", values: ["PermaTell"] },
       { name: "PermaTell-Asset-Type", values: ["story-process"] },
     ],
-  };
+    [
+      { name: "App-Name", values: ["PermaTell"] },
+      { name: "Zone-Type", values: ["Story"] },
+    ],
+  ];
   const endpoints = [
     typeof window !== "undefined" ? "/api/arweave/graphql" : "",
     "https://arweave.net/graphql",
   ].filter(Boolean);
 
-  for (const endpoint of endpoints) {
-    const edges = await postGraphql(endpoint, variables);
-    if (!edges) continue;
-    for (const edge of edges) {
-      const id = clean(edge?.node?.id);
-      if (!isAoProcessId(id)) continue;
-      const tags = edge?.node?.tags || [];
-      const existing = byId.get(id);
-      byId.set(id, {
-        id,
-        title:
-          existing?.title ||
-          getTagValue(tags, ["Title", "Name", "Bootloader-Title"]),
-        author:
-          existing?.author ||
-          getTagValue(tags, ["Creator", "Bootloader-Creator"]) ||
-          clean(edge?.node?.owner?.address),
-        category:
-          existing?.category ||
-          getTagValue(tags, [
-            "PermaTell-Category",
-            "Bootloader-Category",
-            "Category",
-          ]),
-      });
+  for (const tags of tagSets) {
+    for (const endpoint of endpoints) {
+      const edges = await postGraphql(endpoint, { first: 50, tags });
+      if (!edges?.length) continue;
+      for (const edge of edges) {
+        const id = clean(edge?.node?.id);
+        if (!isAoProcessId(id)) continue;
+        const nodeTags = edge?.node?.tags || [];
+        const existing = byId.get(id);
+        byId.set(id, {
+          id,
+          title:
+            existing?.title ||
+            getTagValue(nodeTags, ["Title", "Name", "Bootloader-Title"]),
+          author:
+            existing?.author ||
+            getTagValue(nodeTags, ["Creator", "Bootloader-Creator"]) ||
+            clean(edge?.node?.owner?.address),
+          category:
+            existing?.category ||
+            getTagValue(nodeTags, [
+              "PermaTell-Category",
+              "Bootloader-Category",
+              "Category",
+            ]),
+        });
+      }
+      break;
     }
-    break;
   }
 
   return [...byId.values()];

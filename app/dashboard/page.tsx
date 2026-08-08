@@ -274,179 +274,91 @@ const Dashboard = () => {
         </div>
       </PageHeader>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="md:col-span-2">
-          {topStories.length > 0 && (
-            <div
-              onMouseEnter={() => setIsHovering(true)}
-              onMouseLeave={() => setIsHovering(false)}
-            >
-              <CardContainer className="overflow-hidden relative h-[320px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-gray-800/50 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={currentSlide}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.3 }}
-                    className="h-full"
-                  >
-                    <div className="md:flex h-full">
-                      <div className="md:w-1/3 h-48 md:h-full relative">
-                        <img
-                          src={safeCoverImageSrc(
-                            topStories[currentSlide].version_data?.cover_image
-                          )}
-                          alt={`Cover for ${topStories[currentSlide].version_data?.title || "story"}`}
-                          className="absolute inset-0 w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="md:w-2/3 p-6 flex flex-col">
-                        <h2 className="text-2xl font-bold mb-2 text-white/95">
-                          Featured Stories
-                        </h2>
-                        <CardTitle className="text-2xl mb-2 bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
-                          {topStories[currentSlide].version_data?.title || "Untitled"}
-                        </CardTitle>
-                        <p className="text-gray-200 mb-4 line-clamp-3">
-                          {topStories[currentSlide].version_data?.description}
-                        </p>
-                        <div className="mb-4">
-                          <p className="text-sm text-gray-300 italic line-clamp-2">
-                            "
-                            {(
-                              topStories[currentSlide].version_data?.content ||
-                              ""
-                            ).slice(0, 150)}
-                            ..."
-                          </p>
-                        </div>
-                        <div className="flex items-center mb-4">
-                          <IoMdThumbsUp
-                            size={20}
-                            className="text-yellow-500 mr-2"
-                          />
-                          <span className="text-gray-300">
-                            {topStories[currentSlide].version_data?.votes || 0} votes
-                          </span>
-                        </div>
-                        <div className="mt-auto">
-                          <Link href={`/story/${topStories[currentSlide].id}`}>
-                            <Button className="bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700">
-                              Read Story
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                </AnimatePresence>
-                <div className="absolute bottom-4 right-4 flex gap-2">
-                  <Button
-                    onClick={prevSlide}
-                    variant="ghost"
-                    className="h-8 w-8 p-0 bg-black/40 hover:bg-black/60 text-white"
-                  >
-                    <IoMdArrowBack />
-                  </Button>
-                  <Button
-                    onClick={nextSlide}
-                    variant="ghost"
-                    className="h-8 w-8 p-0 bg-black/40 hover:bg-black/60 text-white"
-                  >
-                    <IoMdArrowForward />
-                  </Button>
-                </div>
-              </CardContainer>
-            </div>
-          )}
-        </div>
-
-        <div className="md:col-span-1">
-          <h2 className="text-xl font-bold mb-4 text-white/95">Top Authors</h2>
-          <div className="space-y-3">
-            {topAuthors.map(([address, points], index) => (
-              <div
-                key={address}
-                className="flex items-center space-x-3 p-3 bg-black/40 rounded-lg hover:bg-black/60 transition-colors"
+      {topStories.length > 0 && (
+        <div
+          className="mb-8"
+          onMouseEnter={() => setIsHovering(true)}
+          onMouseLeave={() => setIsHovering(false)}
+        >
+          <CardContainer className="overflow-hidden relative h-[320px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-gray-800/50 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentSlide}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                className="h-full"
               >
-                <div className="flex-shrink-0">
-                  <AuthorAvatar address={address} size="md" />
-                </div>
-                <div className="flex-grow">
-                  <p className="font-medium text-white/90">
-                    <ArnsName address={address || null} showAddress={true} />
-                  </p>
-                  <p className="text-sm text-gray-500">{points} points</p>
-                </div>
-                <div className="flex items-center space-x-1 flex-shrink-0">
-                  <FaStar
-                    size={14}
-                    className={
-                      index === 0
-                        ? "text-yellow-500"
-                        : index === 1
-                        ? "text-gray-400"
-                        : "text-amber-600"
-                    }
-                  />
-                  <span className="font-bold text-sm text-gray-300">
-                    {points}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <h2 className="mb-4 mt-8 text-xl font-bold text-white/95">
-            Top POMPs
-          </h2>
-          <div className="space-y-3">
-            {topPomps.length > 0 ? (
-              topPomps.map(({ pomp, stats }, index) => (
-                <Link
-                  key={pomp.assetId}
-                  href={`/pomp/${pomp.assetId}`}
-                  className="block rounded-lg bg-black/40 p-3 transition-colors hover:bg-black/60"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-950">
-                      {pomp.artworkUrl ? (
-                        <img
-                          src={pomp.artworkUrl}
-                          alt={pomp.title}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <Award className="h-5 w-5 text-purple-300" />
+                <div className="md:flex h-full">
+                  <div className="md:w-1/3 h-48 md:h-full relative">
+                    <img
+                      src={safeCoverImageSrc(
+                        topStories[currentSlide].version_data?.cover_image
                       )}
-                    </div>
-                    <div className="min-w-0 flex-grow">
-                      <p className="truncate font-medium text-white/90">
-                        {pomp.title}
+                      alt={`Cover for ${topStories[currentSlide].version_data?.title || "story"}`}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="md:w-2/3 p-6 flex flex-col">
+                    <h2 className="text-2xl font-bold mb-2 text-white/95">
+                      Featured Stories
+                    </h2>
+                    <CardTitle className="text-2xl mb-2 bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
+                      {topStories[currentSlide].version_data?.title || "Untitled"}
+                    </CardTitle>
+                    <p className="text-gray-200 mb-4 line-clamp-3">
+                      {topStories[currentSlide].version_data?.description}
+                    </p>
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-300 italic line-clamp-2">
+                        "
+                        {(
+                          topStories[currentSlide].version_data?.content ||
+                          ""
+                        ).slice(0, 150)}
+                        ..."
                       </p>
-                      <p className="text-sm text-gray-500">
-                        {stats ? `${stats.claimed} claims` : "Indexing claims"}
-                      </p>
                     </div>
-                    <div className="flex items-center gap-1 text-sm font-bold text-purple-200">
-                      <FaStar
-                        size={14}
-                        className={index === 0 ? "text-yellow-500" : "text-gray-400"}
+                    <div className="flex items-center mb-4">
+                      <IoMdThumbsUp
+                        size={20}
+                        className="text-yellow-500 mr-2"
                       />
-                      <span>{stats?.claimed || 0}</span>
+                      <span className="text-gray-300">
+                        {topStories[currentSlide].version_data?.votes || 0} votes
+                      </span>
+                    </div>
+                    <div className="mt-auto">
+                      <Link href={`/story/${topStories[currentSlide].id}`}>
+                        <Button className="bg-gradient-to-br from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-gray-200 border border-gray-700">
+                          Read Story
+                        </Button>
+                      </Link>
                     </div>
                   </div>
-                </Link>
-              ))
-            ) : (
-              <div className="rounded-lg bg-black/30 p-3 text-sm text-gray-500">
-                No native POMP campaigns ranked yet.
-              </div>
-            )}
-          </div>
+                </div>
+              </motion.div>
+            </AnimatePresence>
+            <div className="absolute bottom-4 right-4 flex gap-2">
+              <Button
+                onClick={prevSlide}
+                variant="ghost"
+                className="h-8 w-8 p-0 bg-black/40 hover:bg-black/60 text-white"
+              >
+                <IoMdArrowBack />
+              </Button>
+              <Button
+                onClick={nextSlide}
+                variant="ghost"
+                className="h-8 w-8 p-0 bg-black/40 hover:bg-black/60 text-white"
+              >
+                <IoMdArrowForward />
+              </Button>
+            </div>
+          </CardContainer>
         </div>
-      </div>
+      )}
 
       <h2 className="text-2xl font-semibold mb-4 text-white/90">
         Find Stories
@@ -553,6 +465,93 @@ const Dashboard = () => {
           )}
         </motion.section>
       )}
+
+      <div className="mb-10 grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div>
+          <h2 className="text-xl font-bold mb-4 text-white/95">Top Authors</h2>
+          <div className="space-y-3">
+            {topAuthors.map(([address, points], index) => (
+              <div
+                key={address}
+                className="flex items-center space-x-3 p-3 bg-black/40 rounded-lg hover:bg-black/60 transition-colors"
+              >
+                <div className="flex-shrink-0">
+                  <AuthorAvatar address={address} size="md" />
+                </div>
+                <div className="flex-grow">
+                  <p className="font-medium text-white/90">
+                    <ArnsName address={address || null} showAddress={true} />
+                  </p>
+                  <p className="text-sm text-gray-500">{points} points</p>
+                </div>
+                <div className="flex items-center space-x-1 flex-shrink-0">
+                  <FaStar
+                    size={14}
+                    className={
+                      index === 0
+                        ? "text-yellow-500"
+                        : index === 1
+                        ? "text-gray-400"
+                        : "text-amber-600"
+                    }
+                  />
+                  <span className="font-bold text-sm text-gray-300">
+                    {points}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="mb-4 text-xl font-bold text-white/95">Top POMPs</h2>
+          <div className="space-y-3">
+            {topPomps.length > 0 ? (
+              topPomps.map(({ pomp, stats }, index) => (
+                <Link
+                  key={pomp.assetId}
+                  href={`/pomp/${pomp.assetId}`}
+                  className="block rounded-lg bg-black/40 p-3 transition-colors hover:bg-black/60"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-950">
+                      {pomp.artworkUrl ? (
+                        <img
+                          src={pomp.artworkUrl}
+                          alt={pomp.title}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <Award className="h-5 w-5 text-purple-300" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-grow">
+                      <p className="truncate font-medium text-white/90">
+                        {pomp.title}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {stats ? `${stats.claimed} claims` : "Indexing claims"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-sm font-bold text-purple-200">
+                      <FaStar
+                        size={14}
+                        className={index === 0 ? "text-yellow-500" : "text-gray-400"}
+                      />
+                      <span>{stats?.claimed || 0}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            ) : (
+              <div className="rounded-lg bg-black/30 p-3 text-sm text-gray-500">
+                No native POMP campaigns ranked yet.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="mb-10">
         <div className="mb-4 flex items-center justify-between gap-3">
