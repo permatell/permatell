@@ -22,6 +22,7 @@ import { IoMdThumbsUp } from "react-icons/io";
 import { motion } from "framer-motion";
 import { Separator } from "@/components/ui/separator";
 import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
+import { CoverImageField } from "@/components/ui/cover-image-field";
 import ReactMarkdown from "react-markdown";
 import { BiNetworkChart } from "react-icons/bi";
 import { useRouter } from "next/navigation";
@@ -215,9 +216,9 @@ const StoryPage = () => {
       </motion.div>
 
       <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           {isEditing ? (
-            <div className="space-y-6">
+            <div className="flex flex-col gap-6">
               <div>
                 <Label
                   htmlFor="title"
@@ -272,30 +273,14 @@ const StoryPage = () => {
                 />
               </div>
 
-              <div>
-                <Label
-                  htmlFor="coverImage"
-                  className="text-gray-200 text-lg mb-2 block"
-                >
-                  Cover Image URL:
-                </Label>
-                <Input
-                  value={editedCoverImage}
-                  onChange={(e) => setEditedCoverImage(e.target.value)}
-                  onBlur={() =>
-                    setCoverPreview(
-                      isCompleteHttpUrl(editedCoverImage)
-                        ? editedCoverImage.trim()
-                        : ""
-                    )
-                  }
-                  placeholder="https://example.com/image.jpg"
-                  className="bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
-                  disabled={isSaving || isRefreshing}
-                />
-              </div>
+              <CoverImageField
+                value={editedCoverImage}
+                onChange={setEditedCoverImage}
+                onPreviewChange={setCoverPreview}
+                disabled={isSaving || isRefreshing}
+              />
 
-              <div className="flex gap-4 mt-8">
+              <div className="flex flex-col sm:flex-row gap-4 pt-2">
                 <Button
                   onClick={handleSave}
                   disabled={isSaving || !author}

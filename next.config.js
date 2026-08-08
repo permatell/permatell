@@ -70,7 +70,18 @@ const nextConfig = {
         os: require.resolve('os-browserify/browser'),
         url: require.resolve('url/'),
         process: require.resolve('process/browser'),
+        buffer: require.resolve('buffer/'),
       };
+
+      // @ardrive/turbo-sdk's web build imports `node:buffer`. Webpack treats the
+      // `node:` prefix as an unhandled URI scheme in browser builds, so strip it
+      // and let the polyfill fallbacks above resolve the bare specifier.
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+          resource.request = resource.request.replace(/^node:/, '');
+        })
+      );
+
       
       // Add process polyfill
       config.plugins.push(

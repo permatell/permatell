@@ -21,8 +21,9 @@ import { STORY_CATEGORIES } from "@/app/constants/categories";
 import { Separator } from "@/components/ui/separator";
 import { motion } from "framer-motion";
 import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
+import { CoverImageField } from "@/components/ui/cover-image-field";
 import type { StoryAtomicAssetResult } from "@/lib/permatellAssets";
-import { isCompleteHttpUrl, safeCoverImageSrc } from "@/lib/utils";
+import { safeCoverImageSrc } from "@/lib/utils";
 
 export default function CreateStoryPage() {
   const { createStory, loading } = useStoriesProcess();
@@ -81,7 +82,7 @@ export default function CreateStoryPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           onSubmit={handleSubmit}
-          className="space-y-6 flex-1"
+          className="space-y-6 flex-1 min-w-0"
         >
           <FormField label="Title:" htmlFor="title">
             <Input
@@ -141,27 +142,12 @@ export default function CreateStoryPage() {
             />
           </div>
 
-          <div>
-            <Label
-              htmlFor="coverImage"
-              className="text-gray-200 text-lg mb-2 block"
-            >
-              Cover Image URL:
-            </Label>
-            <Input
-              type="url"
-              id="coverImage"
-              value={coverImage}
-              onChange={(e) => setCoverImage(e.target.value)}
-              onBlur={() =>
-                setCoverPreview(
-                  isCompleteHttpUrl(coverImage) ? coverImage.trim() : ""
-                )
-              }
-              placeholder="https://example.com/image.jpg"
-              className="bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
-            />
-          </div>
+          <CoverImageField
+            value={coverImage}
+            onChange={setCoverImage}
+            onPreviewChange={setCoverPreview}
+            disabled={loading}
+          />
 
           <div className="space-y-4 rounded-lg border border-gray-800 bg-black/30 p-4">
             <div className="flex items-start space-x-3">

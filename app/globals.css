@@ -103,13 +103,70 @@ body {
   backdrop-filter: blur(8px);
 }
 
-.markdown-editor .rc-md-editor {
+/* The wrapper class lands on the same element as `.rc-md-editor`, so keep the
+   overrides on a compound selector rather than a descendant one. */
+.markdown-editor.rc-md-editor {
   border-color: rgb(31, 41, 55) !important;
-  background-color: transparent !important;
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+/* The editor's own fullscreen mode forces height:100%, so drop the utility
+   class clamps that would otherwise keep it letterboxed. */
+.markdown-editor.rc-md-editor.full {
+  min-height: 0 !important;
+  max-height: none !important;
+  border-radius: 0;
 }
 
 .markdown-editor .rc-md-navigation {
   background-color: rgba(0, 0, 0, 0.4) !important;
+  border-bottom-color: rgb(31, 41, 55) !important;
+}
+
+.markdown-editor .rc-md-navigation .navigation-nav {
+  color: rgb(209, 213, 219) !important;
+}
+
+.markdown-editor .rc-md-navigation .button-wrap .button,
+.markdown-editor .tool-bar .button {
+  color: rgb(156, 163, 175) !important;
+}
+
+.markdown-editor .rc-md-navigation .button-wrap .button:hover,
+.markdown-editor .tool-bar .button:hover {
+  color: rgb(255, 255, 255) !important;
+}
+
+.markdown-editor .rc-md-navigation .button-wrap .button.disabled {
+  color: rgb(75, 85, 99) !important;
+}
+
+.markdown-editor .editor-container > .section {
+  border-right-color: rgb(31, 41, 55) !important;
+}
+
+.markdown-editor .rc-md-divider {
+  background-color: rgb(31, 41, 55) !important;
+}
+
+.markdown-editor .drop-wrap {
+  background-color: rgb(17, 24, 39) !important;
+  border-color: rgb(31, 41, 55) !important;
+  color: rgb(209, 213, 219) !important;
+}
+
+.markdown-editor .header-list .list-item:hover,
+.markdown-editor .tab-map-list .list-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.markdown-editor .table-list.wrap .list-item {
+  background-color: rgb(55, 65, 81) !important;
+}
+
+.markdown-editor .table-list.wrap .list-item.active {
+  background-color: rgb(147, 51, 234) !important;
 }
 
 .markdown-editor .section-container {
@@ -135,6 +192,34 @@ body {
 .markdown-editor .custom-html-style p,
 .markdown-editor .custom-html-style li {
   color: white !important;
+}
+
+.markdown-editor .custom-html-style a {
+  color: rgb(96, 165, 250) !important;
+}
+
+.markdown-editor .custom-html-style code,
+.markdown-editor .custom-html-style pre {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: rgb(229, 231, 235) !important;
+}
+
+.markdown-editor .custom-html-style blockquote {
+  color: rgb(229, 231, 235) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-left-color: rgb(75, 85, 99) !important;
+}
+
+.markdown-editor .custom-html-style hr,
+.markdown-editor .custom-html-style table,
+.markdown-editor .custom-html-style table tr,
+.markdown-editor .custom-html-style table th,
+.markdown-editor .custom-html-style table td {
+  border-color: rgb(31, 41, 55) !important;
+}
+
+.markdown-editor .custom-html-style table th {
+  background-color: rgba(255, 255, 255, 0.05) !important;
 }
 
 html,
