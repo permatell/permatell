@@ -20,6 +20,7 @@ import {
   type StoryAtomicAssetResult,
 } from "@/lib/permatellAssets";
 import {
+  applyLocalStoryRevert,
   applyLocalStoryUpvote,
   applyLocalStoryVersion,
   evalPerStoryHandlers,
@@ -31,6 +32,7 @@ import {
   readStoredMainnetCurrentStories,
   readStoredMainnetStory,
   spawnMainnetStoryProcess,
+  updateStoredMainnetStory,
   waitForHyperbeamStory,
   walletHasUpvotedVersion,
 } from "@/lib/mainnetStories";
@@ -379,19 +381,68 @@ export const StoriesProcessProvider: React.FC<{
     setLoading(true);
     try {
       if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
+        if (
+          currentStory?.id === payload.story_id &&
+          !readStoredMainnetStory(payload.story_id)
+        ) {
+          updateStoredMainnetStory(currentStory);
+        }
+        const targetVersion = String(payload.version_id);
+        const stored = readStoredMainnetStory(payload.story_id);
+        const hasTarget = Boolean(
+          stored &&
+            Object.keys(stored.versions || {}).some(
+              (id) =>
+                String(id) === targetVersion ||
+                String(stored.versions[id]?.id) === targetVersion
+            )
+        );
+        if (!hasTarget) {
+          const seeded =
+            preferFresherStory(
+              currentStory?.id === payload.story_id ? currentStory : null,
+              await fetchHyperbeamStory(payload.story_id)
+            ) || readStoredMainnetStory(payload.story_id);
+          if (seeded) updateStoredMainnetStory(seeded);
+        }
         await evalPerStoryHandlers(payload.story_id);
         await sendMessage(
           [
             { name: "Action", value: "RevertStoryToVersion" },
-            { name: "version_id", value: payload.version_id },
+            { name: "version_id", value: targetVersion },
           ],
           undefined,
           payload.story_id
         );
+        const updated = applyLocalStoryRevert(payload.story_id, targetVersion);
+        if (updated) setCurrentStory(updated);
+        else throw new Error("Story version not found");
         const remote = await waitForHyperbeamStory(payload.story_id, {
-          minCurrentVersion: Number(payload.version_id) || 1,
+          exactCurrentVersion: targetVersion,
+          attempts: 10,
+          delayMs: 900,
         });
-        if (remote) setCurrentStory(remote);
+        const remoteMatched =
+          remote && String(remote.current_version) === targetVersion
+            ? remote
+            : null;
+        const confirmed = preferFresherStory(updated, remoteMatched) || updated;
+        setCurrentStory(confirmed);
+        console.info("[stories] RevertStoryToVersion confirmed", {
+          id: confirmed.id,
+          current_version: confirmed.current_version,
+          source: remoteMatched
+            ? confirmed === remoteMatched
+              ? "hyperbeam"
+              : "local+hyperbeam"
+            : "local",
+        });
+        if (!remoteMatched) {
+          console.warn(
+            "[stories] RevertStoryToVersion sent but HyperBEAM /now did not confirm yet; keeping local revert",
+            { story_id: payload.story_id, version_id: targetVersion }
+          );
+        }
         await getStories();
         return;
       }

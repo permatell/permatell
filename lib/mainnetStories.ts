@@ -240,10 +240,24 @@ Handlers.add("revert_story_to_version",
   { Action = "RevertStoryToVersion" },
   function(msg)
     local version_id = msg_value(msg, "version_id")
-    if version_id and Story.versions[version_id] then
-      Story.current_version = version_id
+    local resolved_id, version = nil, nil
+    if version_id and type(Story.versions) == "table" then
+      if Story.versions[version_id] then
+        resolved_id, version = version_id, Story.versions[version_id]
+      else
+        for vid, ver in pairs(Story.versions) do
+          if tostring(vid) == tostring(version_id)
+            or tostring(ver and ver.id) == tostring(version_id) then
+            resolved_id, version = tostring(vid), ver
+            break
+          end
+        end
+      end
+    end
+    if resolved_id and version then
+      Story.current_version = resolved_id
       publish_story_state()
-      ao.send({ Target = msg.From, Data = "Story reverted to version: " .. version_id })
+      ao.send({ Target = msg.From, Data = "Story reverted to version: " .. resolved_id })
     else
       ao.send({ Target = msg.From, Data = "Story version not found!" })
     end
@@ -567,15 +581,24 @@ function storyVoteTotal(story: Story | null | undefined): number {
   );
 }
 
-/** Prefer the fresher of two story snapshots (more versions, then more votes, then higher current). */
+/**
+ * Prefer the fresher of two story snapshots (more versions, then more votes).
+ * Do not score current_version: revert intentionally lowers it, and treating a
+ * higher pointer as "fresher" undoes successful reverts against local/cache.
+ */
 export function preferFresherStory(a: Story | null, b: Story | null): Story | null {
   if (!a) return b;
   if (!b) return a;
   const score = (story: Story) =>
-    storyVersionCount(story) * 1_000_000 +
-    storyVoteTotal(story) * 1_000 +
-    (Number(story.current_version) || 0);
-  return score(a) >= score(b) ? a : b;
+    storyVersionCount(story) * 1_000_000 + storyVoteTotal(story) * 1_000;
+  const scoreA = score(a);
+  const scoreB = score(b);
+  if (scoreA !== scoreB) return scoreA > scoreB ? a : b;
+  // Same versions/votes: prefer the snapshot whose current_version still exists.
+  const aOk = Boolean(a.versions?.[a.current_version]);
+  const bOk = Boolean(b.versions?.[b.current_version]);
+  if (aOk !== bOk) return aOk ? a : b;
+  return a;
 }
 
 function rememberFetchedStory(story: Story, extra?: Partial<StoredMainnetStory>) {
@@ -740,6 +763,8 @@ export async function waitForHyperbeamStory(
     minVersions?: number;
     minVotes?: number;
     minCurrentVersion?: number;
+    /** Exact current_version match (required for revert; >= is wrong when going backward). */
+    exactCurrentVersion?: string | number;
     attempts?: number;
     delayMs?: number;
   }
@@ -757,7 +782,10 @@ export async function waitForHyperbeamStory(
       const currentOk =
         !opts?.minCurrentVersion ||
         (Number(latest.current_version) || 0) >= opts.minCurrentVersion;
-      if (versionOk && votesOk && currentOk) return latest;
+      const exactOk =
+        opts?.exactCurrentVersion == null ||
+        String(latest.current_version) === String(opts.exactCurrentVersion);
+      if (versionOk && votesOk && currentOk && exactOk) return latest;
     }
     if (i < attempts - 1) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -766,7 +794,7 @@ export async function waitForHyperbeamStory(
   return latest || readStoredMainnetStory(processId);
 }
 
-const HANDLER_REPAIR_VERSION = "story-voters-v1";
+const HANDLER_REPAIR_VERSION = "story-revert-v1";
 
 export async function evalPerStoryHandlers(processId: string): Promise<void> {
   const repairKey = `${processId}:${HANDLER_REPAIR_VERSION}`;
@@ -1189,6 +1217,27 @@ export function applyLocalStoryUpvote(
         voters,
       },
     },
+  };
+  updateStoredMainnetStory(updated);
+  return updated;
+}
+
+/** Point current_version at an existing prior version (does not delete newer versions). */
+export function applyLocalStoryRevert(
+  storyId: string,
+  versionId: string
+): Story | null {
+  const existing = readStoredMainnetStory(storyId);
+  if (!existing?.versions) return null;
+  const targetKey = Object.keys(existing.versions).find(
+    (id) =>
+      String(id) === String(versionId) ||
+      String(existing.versions[id]?.id) === String(versionId)
+  );
+  if (!targetKey || !existing.versions[targetKey]) return null;
+  const updated: Story = {
+    ...existing,
+    current_version: targetKey,
   };
   updateStoredMainnetStory(updated);
   return updated;
