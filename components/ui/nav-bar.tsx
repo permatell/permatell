@@ -36,7 +36,7 @@ export function Navbar() {
     process.env.NEXT_PUBLIC_AO_WRITE_URL ||
     process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL ||
     process.env.NEXT_PUBLIC_HYPERBEAM_URL ||
-    "https://hb.portalinto.com";
+    "https://app-1.forward.computer";
   const nodeLabel = formatNodeLabel(writeNode);
   const scheduler = process.env.NEXT_PUBLIC_AO_MAINNET_SCHEDULER || "";
   const shortScheduler = scheduler

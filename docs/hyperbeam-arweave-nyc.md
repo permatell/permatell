@@ -19,14 +19,17 @@ and authority must belong to the same node/operator setup.
 
 Never commit JWKs or `.env.local`.
 
-## Current Stable App Settings (Portal write path)
+## Current Stable App Settings (Portal scheduler + Forward write node)
 
-These match the Portal production write path used by StreamVault / atomic assets:
+Portal (`hb.portalinto.com`) is reachable for `GET /~meta@1.0/info`, but Node
+`POST /push` spawn currently hangs there. Use Portal's scheduler/authority with
+`https://app-1.forward.computer` for spawn/hydrate (and browser writes after
+spawn). Browser wallets still use `relay@1.0` + DataItem signer.
 
 ```env
 NEXT_PUBLIC_AO_MODE=mainnet
-NEXT_PUBLIC_AO_WRITE_URL=https://hb.portalinto.com
-NEXT_PUBLIC_HYPERBEAM_URL=https://hb.portalinto.com
+NEXT_PUBLIC_AO_WRITE_URL=https://app-1.forward.computer
+NEXT_PUBLIC_HYPERBEAM_URL=https://app-1.forward.computer
 NEXT_PUBLIC_AO_MAINNET_SCHEDULER=n_XZJhUnmldNFo4dhajoPZWhBXuJk-OcQr5JQ49c4Zo
 NEXT_PUBLIC_AO_MAINNET_AUTHORITY=a5ZMUKbGClAsKzB4SHDYrwkOZZHIIfpbaxrmKwUHCe8
 NEXT_PUBLIC_AO_MAINNET_SCHEDULER_DEVICE=scheduler@1.0
@@ -54,7 +57,12 @@ npm run ao:spawn-mainnet:dry
 npm run ao:spawn-mainnet -- --wallet ~/path/to/arweave-jwk.json
 ```
 
-Paste the printed process IDs into Vercel env and redeploy.
+If `NEXT_PUBLIC_AO_WRITE_URL` still points at Portal, the spawn script times
+out `POST /push` there and automatically retries `https://app-1.forward.computer`
+while keeping the Portal scheduler. Use `--no-fallback` to disable that.
+
+Paste the printed process IDs into Vercel env and redeploy. Prefer the printed
+`NEXT_PUBLIC_AO_WRITE_URL` from a successful spawn.
 
 ## arweave.nyc Switch-Over
 

@@ -18,12 +18,16 @@
  *
  * Dry-run (config check only, no spawn):
  *   node scripts/spawn-mainnet-processes.mjs --dry-run
+ *
+ * Node spawn uses a JWK `createSigner` (ANS-104 + HTTP-SIG capable). Browser writes
+ * stay on relay@1.0 + DataItem signer. If Portal hangs on POST /push, the script
+ * falls back to https://app-1.forward.computer while keeping the Portal scheduler.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect, createDataItemSigner } from "@permaweb/aoconnect";
+import { connect, createSigner } from "@permaweb/aoconnect";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -31,7 +35,12 @@ const ROOT = resolve(__dirname, "..");
 const DEFAULT_MODULE = "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s";
 const DEFAULT_AUTHORITY = "a5ZMUKbGClAsKzB4SHDYrwkOZZHIIfpbaxrmKwUHCe8";
 const DEFAULT_WRITE_URL = "https://hb.portalinto.com";
+const PORTAL_SCHEDULER = "n_XZJhUnmldNFo4dhajoPZWhBXuJk-OcQr5JQ49c4Zo";
+const APP1_WRITE_URL = "https://app-1.forward.computer";
 const PLACEHOLDER = "__STORY_POINTS_PROCESS_ID__";
+const WRITE_TIMEOUT_MS = 25_000;
+const META_TIMEOUT_MS = 12_000;
+const BODY_PREVIEW_CHARS = 1_200;
 
 function argValue(flag) {
   const idx = process.argv.indexOf(flag);
@@ -73,11 +82,28 @@ function loadEnvFile(path) {
 loadEnvFile(resolve(ROOT, ".env.local"));
 loadEnvFile(resolve(ROOT, ".env"));
 
+function normalizeUrl(value) {
+  return clean(value).replace(/\/+$/, "");
+}
+
+function dedupeUrls(urls) {
+  const seen = new Set();
+  const out = [];
+  for (const url of urls) {
+    const normalized = normalizeUrl(url);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
 function requireConfig() {
   const writeUrl =
-    clean(process.env.NEXT_PUBLIC_AO_WRITE_URL) ||
-    clean(process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL) ||
-    clean(process.env.NEXT_PUBLIC_HYPERBEAM_URL) ||
+    normalizeUrl(argValue("--url")) ||
+    normalizeUrl(process.env.NEXT_PUBLIC_AO_WRITE_URL) ||
+    normalizeUrl(process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL) ||
+    normalizeUrl(process.env.NEXT_PUBLIC_HYPERBEAM_URL) ||
     DEFAULT_WRITE_URL;
   const scheduler = clean(process.env.NEXT_PUBLIC_AO_MAINNET_SCHEDULER);
   const moduleId =
@@ -94,6 +120,15 @@ function requireConfig() {
   }
 
   return { writeUrl, scheduler, moduleId, authority, device };
+}
+
+function spawnCandidateUrls(writeUrl, scheduler) {
+  const urls = [writeUrl];
+  if (hasFlag("--no-fallback")) return dedupeUrls(urls);
+  if (scheduler === PORTAL_SCHEDULER && writeUrl !== APP1_WRITE_URL) {
+    urls.push(APP1_WRITE_URL);
+  }
+  return dedupeUrls(urls);
 }
 
 function loadWallet() {
@@ -133,11 +168,105 @@ async function sleep(ms) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+function previewBody(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, BODY_PREVIEW_CHARS);
+}
+
+function formatSpawnError(err, lastHttp) {
+  const lines = [`${err?.name || "Error"}: ${err?.message || err}`];
+  if (err?.code) lines.push(`code: ${err.code}`);
+  if (lastHttp?.url) {
+    lines.push(`URL: ${lastHttp.method || "POST"} ${lastHttp.url}`);
+  }
+  if (lastHttp?.status != null) lines.push(`status: ${lastHttp.status}`);
+  if (lastHttp?.ms != null) lines.push(`elapsed: ${lastHttp.ms}ms`);
+  if (lastHttp?.body) lines.push(`body: ${previewBody(lastHttp.body)}`);
+  const cause =
+    err?.cause?.message ||
+    err?.originalError?.message ||
+    err?.originalError?.cause?.message ||
+    lastHttp?.cause;
+  if (cause) lines.push(`cause: ${cause}`);
+  if (err?.context && typeof err.context === "object") {
+    try {
+      lines.push(`context: ${JSON.stringify(err.context)}`);
+    } catch {
+      // ignore
+    }
+  }
+  return lines.join("\n");
+}
+
+function installFetchDiagnostics(timeoutMs = WRITE_TIMEOUT_MS) {
+  const origFetch = globalThis.fetch.bind(globalThis);
+  const state = { last: null };
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+    const method = String(
+      init.method || (input instanceof Request ? input.method : "GET")
+    ).toUpperCase();
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(new Error(`HyperBEAM request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    const signal = init.signal
+      ? AbortSignal.any([init.signal, controller.signal])
+      : controller.signal;
+
+    try {
+      const res = await origFetch(input, { ...init, signal });
+      let body = "";
+      if (!res.ok) {
+        body = await res
+          .clone()
+          .text()
+          .then((text) => previewBody(text))
+          .catch((readErr) => `[body read failed: ${readErr.message}]`);
+      }
+      state.last = {
+        url,
+        method,
+        status: res.status,
+        ok: res.ok,
+        ms: Date.now() - started,
+        body,
+        process: res.headers.get("process"),
+      };
+      return res;
+    } catch (err) {
+      state.last = {
+        url,
+        method,
+        status: null,
+        ok: false,
+        ms: Date.now() - started,
+        body: "",
+        cause: err?.message || String(err),
+      };
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  return state;
+}
+
 async function probeNode(writeUrl) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12_000);
+  const timeout = setTimeout(() => controller.abort(), META_TIMEOUT_MS);
   try {
-    const res = await fetch(`${writeUrl.replace(/\/+$/, "")}/~meta@1.0/info`, {
+    const res = await fetch(`${writeUrl}/~meta@1.0/info`, {
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
@@ -145,14 +274,13 @@ async function probeNode(writeUrl) {
       console.warn(`[probe] ${writeUrl} returned HTTP ${res.status}`);
       return null;
     }
-    // Portal meta can be huge — only read the first chunk.
     const reader = res.body?.getReader?.();
     if (reader) {
       const { value } = await reader.read();
       await reader.cancel();
       const chunk = new TextDecoder().decode(value || new Uint8Array());
       const addressMatch = chunk.match(/"address"\s*:\s*"([^"]+)"/);
-      const forceMatch = chunk.match(/"force-signed"\s*:\s*"?([^",}\s]+)"?/);
+      const forceMatch = chunk.match(/"force[_-]signed"\s*:\s*"?([^",}\s]+)"?/);
       return {
         address: addressMatch?.[1],
         "force-signed": forceMatch?.[1],
@@ -167,11 +295,20 @@ async function probeNode(writeUrl) {
       return { raw: text.slice(0, 120) };
     }
   } catch (err) {
-    console.warn(`[probe] failed: ${err?.message || err}`);
+    console.warn(`[probe] ${writeUrl} failed: ${err?.message || err}`);
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function createAoClient(writeUrl, scheduler, signer) {
+  return connect({
+    MODE: "mainnet",
+    URL: writeUrl,
+    SCHEDULER: scheduler,
+    signer,
+  });
 }
 
 async function spawnProcess(ao, { moduleId, scheduler, authority, name, data }) {
@@ -200,7 +337,7 @@ async function spawnProcess(ao, { moduleId, scheduler, authority, name, data }) 
 }
 
 async function hydrateEval(ao, processId, luaSource) {
-  const slotOrId = await ao.message({
+  return ao.message({
     process: processId,
     tags: sanitizeTags([
       { name: "Data-Protocol", value: "ao" },
@@ -209,31 +346,59 @@ async function hydrateEval(ao, processId, luaSource) {
     ]),
     data: luaSource,
   });
-  return slotOrId;
+}
+
+async function spawnWithFallback(candidates, scheduler, signer, spawnFn) {
+  let lastError = null;
+  for (const writeUrl of candidates) {
+    console.log(`Trying write node: ${writeUrl}`);
+    const ao = createAoClient(writeUrl, scheduler, signer);
+    try {
+      const result = await spawnFn(ao);
+      return { ao, writeUrl, ...result };
+    } catch (err) {
+      lastError = err;
+      console.warn(formatSpawnError(err, globalThis.__permatellLastHttp?.last));
+      if (writeUrl !== candidates[candidates.length - 1]) {
+        console.warn("Falling back to next write node...\n");
+      }
+    }
+  }
+  throw lastError || new Error("All HyperBEAM write nodes failed");
 }
 
 async function main() {
   const dryRun = hasFlag("--dry-run");
   const cfg = requireConfig();
+  const candidates = spawnCandidateUrls(cfg.writeUrl, cfg.scheduler);
+  const fetchState = installFetchDiagnostics();
+  globalThis.__permatellLastHttp = fetchState;
 
   console.log("=== Permatell mainnet spawn ===");
   console.log(`URL:       ${cfg.writeUrl}`);
+  if (candidates.length > 1) {
+    console.log(`FALLBACK:  ${candidates.slice(1).join(", ")}`);
+  }
   console.log(`SCHEDULER: ${cfg.scheduler}`);
   console.log(`MODULE:    ${cfg.moduleId}`);
   console.log(`AUTHORITY: ${cfg.authority}`);
-  console.log(`DEVICE:    ${cfg.device} (browser default; Node uses DataItem signer)`);
+  console.log(
+    `DEVICE:    ${cfg.device} (browser default; Node spawn uses createSigner / ANS-104)`
+  );
 
-  console.log("\nProbing HyperBEAM node...");
-  const info = await probeNode(cfg.writeUrl);
-  if (info?.address) {
-    console.log(`Node address: ${info.address}`);
-    if (info["force-signed"] != null) {
-      console.log(`force-signed: ${info["force-signed"]}`);
+  console.log("\nProbing HyperBEAM node(s)...");
+  for (const url of candidates) {
+    const info = await probeNode(url);
+    if (info?.address) {
+      console.log(`${url} address: ${info.address}`);
+      if (info["force-signed"] != null) {
+        console.log(`${url} force-signed: ${info["force-signed"]}`);
+      }
+    } else if (info) {
+      console.log(`${url}: reachable (meta ok).`);
+    } else {
+      console.warn(`${url}: probe failed.`);
     }
-  } else if (info) {
-    console.log("Node reachable (meta ok).");
-  } else {
-    console.warn("Node probe failed; continuing anyway.");
   }
 
   if (dryRun) {
@@ -245,24 +410,29 @@ async function main() {
   const { jwk, path: walletPath } = loadWallet();
   console.log(`\nWallet: ${walletPath}`);
 
-  const signer = createDataItemSigner(jwk);
-  const ao = connect({
-    MODE: "mainnet",
-    URL: cfg.writeUrl,
-    SCHEDULER: cfg.scheduler,
-    signer,
-    device: cfg.device,
-  });
+  const signer = createSigner(jwk);
 
   console.log("\n[1/4] Spawning Story Points process...");
-  const storyPointsId = await spawnProcess(ao, {
-    moduleId: cfg.moduleId,
-    scheduler: cfg.scheduler,
-    authority: cfg.authority,
-    name: "PermaTell Story Points",
-    data: "PermaTell Story Points",
-  });
+  const spawned = await spawnWithFallback(
+    candidates,
+    cfg.scheduler,
+    signer,
+    async (ao) => {
+      const storyPointsId = await spawnProcess(ao, {
+        moduleId: cfg.moduleId,
+        scheduler: cfg.scheduler,
+        authority: cfg.authority,
+        name: "PermaTell Story Points",
+        data: "PermaTell Story Points",
+      });
+      return { storyPointsId };
+    }
+  );
+  const { ao, writeUrl: usedWriteUrl, storyPointsId } = spawned;
   console.log(`Story Points process: ${storyPointsId}`);
+  if (usedWriteUrl !== cfg.writeUrl) {
+    console.log(`Spawn succeeded on fallback node: ${usedWriteUrl}`);
+  }
 
   await sleep(1500);
 
@@ -302,7 +472,7 @@ async function main() {
   console.log("");
   console.log("Already required (confirm present):");
   console.log(`NEXT_PUBLIC_AO_MODE=mainnet`);
-  console.log(`NEXT_PUBLIC_AO_WRITE_URL=${cfg.writeUrl}`);
+  console.log(`NEXT_PUBLIC_AO_WRITE_URL=${usedWriteUrl}`);
   console.log(`NEXT_PUBLIC_AO_MAINNET_SCHEDULER=${cfg.scheduler}`);
   console.log(`NEXT_PUBLIC_AO_MAINNET_AUTHORITY=${cfg.authority}`);
   console.log(`NEXT_PUBLIC_AO_MAINNET_DEVICE=relay@1.0`);
@@ -310,10 +480,18 @@ async function main() {
   console.log(
     "After env deploy: mainnet mode uses these IDs for browser writes (Data in message body)."
   );
+  if (usedWriteUrl !== cfg.writeUrl) {
+    console.log(
+      `\nNote: configured URL ${cfg.writeUrl} did not accept spawn; browser writes should use ${usedWriteUrl} (relay@1.0 DataItem signer unchanged).`
+    );
+  }
 }
 
 main().catch((err) => {
-  console.error("\nSpawn failed:", err?.message || err);
+  console.error(
+    "\nSpawn failed:\n" +
+      formatSpawnError(err, globalThis.__permatellLastHttp?.last)
+  );
   process.exitCode = 1;
 }).finally(() => {
   // aoconnect can keep the event loop alive after success.

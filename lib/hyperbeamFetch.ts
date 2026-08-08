@@ -62,8 +62,8 @@ function getWriteNodeUrls(): string[] {
     process.env.NEXT_PUBLIC_AO_WRITE_URL || "",
     process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL || "",
     process.env.NEXT_PUBLIC_HYPERBEAM_URL || "",
-    "https://hb.portalinto.com",
     "https://app-1.forward.computer",
+    "https://hb.portalinto.com",
   ]);
 }
 

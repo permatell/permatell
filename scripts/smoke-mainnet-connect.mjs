@@ -57,16 +57,40 @@ async function fetchWithTimeout(url, ms = 10_000) {
   }
 }
 
+function normalizeUrl(value) {
+  return clean(value).replace(/\/+$/, "");
+}
+
+async function probeMeta(writeUrl) {
+  const res = await fetchWithTimeout(`${writeUrl}/~meta@1.0/info`);
+  console.log(`${writeUrl} meta status:`, res.status);
+  if (!res.ok) throw new Error(`HyperBEAM meta failed: ${res.status}`);
+
+  const reader = res.body?.getReader?.();
+  if (reader) {
+    const { value } = await reader.read();
+    await reader.cancel();
+    const chunk = new TextDecoder().decode(value || new Uint8Array());
+    const addressMatch = chunk.match(/"address"\s*:\s*"([^"]+)"/);
+    if (addressMatch) console.log(`${writeUrl} node address:`, addressMatch[1]);
+    else console.log(`${writeUrl} meta ok (body chunk`, chunk.length, "bytes)");
+  } else {
+    const text = await res.text();
+    console.log(`${writeUrl} meta bytes:`, text.length);
+  }
+}
+
 async function main() {
   const writeUrl =
-    clean(process.env.NEXT_PUBLIC_AO_WRITE_URL) ||
-    clean(process.env.NEXT_PUBLIC_HYPERBEAM_URL) ||
+    normalizeUrl(process.env.NEXT_PUBLIC_AO_WRITE_URL) ||
+    normalizeUrl(process.env.NEXT_PUBLIC_HYPERBEAM_URL) ||
     "https://hb.portalinto.com";
   const scheduler = clean(process.env.NEXT_PUBLIC_AO_MAINNET_SCHEDULER);
   const stories = clean(process.env.NEXT_PUBLIC_MAINNET_STORIES_PROCESS_ID);
   const storyPoints = clean(
     process.env.NEXT_PUBLIC_MAINNET_STORYPOINTS_PROCESS_ID
   );
+  const fallbackUrl = "https://app-1.forward.computer";
 
   console.log("writeUrl:", writeUrl);
   console.log("scheduler:", scheduler || "(missing)");
@@ -90,24 +114,19 @@ async function main() {
       .join(", ")
   );
 
-  const res = await fetchWithTimeout(
-    `${writeUrl.replace(/\/+$/, "")}/~meta@1.0/info`
-  );
-  console.log("meta status:", res.status);
-  if (!res.ok) throw new Error(`HyperBEAM meta failed: ${res.status}`);
-
-  // Avoid hanging on huge JSON bodies — read a bounded slice.
-  const reader = res.body?.getReader?.();
-  if (reader) {
-    const { value } = await reader.read();
-    await reader.cancel();
-    const chunk = new TextDecoder().decode(value || new Uint8Array());
-    const addressMatch = chunk.match(/"address"\s*:\s*"([^"]+)"/);
-    if (addressMatch) console.log("node address (partial parse):", addressMatch[1]);
-    else console.log("meta ok (body chunk", chunk.length, "bytes)");
-  } else {
-    const text = await res.text();
-    console.log("meta bytes:", text.length);
+  await probeMeta(writeUrl);
+  if (
+    scheduler === "n_XZJhUnmldNFo4dhajoPZWhBXuJk-OcQr5JQ49c4Zo" &&
+    writeUrl !== fallbackUrl
+  ) {
+    console.log(
+      `\nPortal spawn POSTs often hang; spawn script falls back to ${fallbackUrl}.`
+    );
+    try {
+      await probeMeta(fallbackUrl);
+    } catch (err) {
+      console.warn(`Fallback probe failed: ${err?.message || err}`);
+    }
   }
 
   console.log("\nSmoke OK. Spawn with:");
