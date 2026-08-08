@@ -11,10 +11,15 @@ and authority must belong to the same node/operator setup.
    `NEXT_PUBLIC_MAINNET_STORYPOINTS_PROCESS_ID`.
 2. **Browser writes** — Wander/Beacon `createDataItemSigner` via
    `connect({ MODE: "mainnet", URL, SCHEDULER, signer })`. Story body goes in
-   message `Data` (not tags). Device default: `relay@1.0`.
+   message `Data` (not tags). Device default: `relay@1.0`. aoconnect still
+   hardcodes `/{id}~process@1.0/push`; the browser fetch wrapper rewrites that
+   to `~relay@1.0/push` on the write node and **never** retries hung Portal
+   `/push`.
 3. **Browser reads** — HyperBEAM dryrun when a wallet is present; legacy CU
-   dryrun as fallback. Without explicit mainnet process IDs, mainnet stays on
-   per-story spawn / localStorage (read-only registry).
+   dryrun as fallback. Registry IDs are used when
+   `NEXT_PUBLIC_MAINNET_*_PROCESS_ID` are set. Existing per-story processes
+   (story id looks like an AO process id) still receive edit/upvote on that
+   process, not the registry.
 4. **Legacy toggle** — remains available unless `NEXT_PUBLIC_AO_LOCK_NETWORK=true`.
 
 Never commit JWKs or `.env.local`.
@@ -57,12 +62,22 @@ npm run ao:spawn-mainnet:dry
 npm run ao:spawn-mainnet -- --wallet ~/path/to/arweave-jwk.json
 ```
 
-If `NEXT_PUBLIC_AO_WRITE_URL` still points at Portal, the spawn script times
-out `POST /push` there and automatically retries `https://app-1.forward.computer`
-while keeping the Portal scheduler. Use `--no-fallback` to disable that.
+If `NEXT_PUBLIC_AO_WRITE_URL` still points at Portal, browser writes now skip
+Portal automatically (`getHyperbeamWriteUrl` + fetch wrapper) and use
+`https://app-1.forward.computer`. The spawn script also times out Portal
+`POST /push` and retries app-1 while keeping the Portal scheduler. Use
+`--no-fallback` to disable that spawn fallback.
+
+`.env.local` is first-wins: do not leave Portal URLs above the app-1 lines.
 
 Paste the printed process IDs into Vercel env and redeploy. Prefer the printed
-`NEXT_PUBLIC_AO_WRITE_URL` from a successful spawn.
+`NEXT_PUBLIC_AO_WRITE_URL` from a successful spawn. Vercel must also set:
+
+```env
+NEXT_PUBLIC_AO_WRITE_URL=https://app-1.forward.computer
+NEXT_PUBLIC_HYPERBEAM_URL=https://app-1.forward.computer
+NEXT_PUBLIC_AO_MAINNET_DEVICE=relay@1.0
+```
 
 ## arweave.nyc Switch-Over
 

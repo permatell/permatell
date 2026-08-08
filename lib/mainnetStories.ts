@@ -1,9 +1,10 @@
 "use client";
 
 import "@/lib/buffer-base64url";
-import { connect, createDataItemSigner } from "@permaweb/aoconnect";
+import { createDataItemSigner } from "@permaweb/aoconnect";
 import {
   getHyperbeamWriteUrl,
+  getMainnetAO,
   MAINNET_DEFAULTS,
 } from "@/lib/ao-config";
 import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
@@ -111,6 +112,16 @@ local Story = {
   }
 }
 
+local function story_content(msg)
+  if type(msg.Data) == "string" and msg.Data ~= "" then
+    return msg.Data
+  end
+  if type(msg.content) == "string" and msg.content ~= "" then
+    return msg.content
+  end
+  return ""
+end
+
 local function publish_story_state()
   pcall(function()
     Send({
@@ -140,11 +151,15 @@ Handlers.add("create_story_version",
   function(msg)
     local new_version_id = generate_new_version_id(Story)
     local current_version = Story.versions[Story.current_version]
+    local next_content = story_content(msg)
+    if next_content == "" then
+      next_content = current_version.content
+    end
     Story.current_version = new_version_id
     Story.versions[new_version_id] = {
       id = tonumber(new_version_id),
       title = msg.title or current_version.title,
-      content = msg.content or current_version.content,
+      content = next_content,
       cover_image = msg.cover_image or current_version.cover_image,
       author = msg.From,
       timestamp = os.time(),
@@ -236,6 +251,65 @@ export function updateStoredMainnetStory(story: Story) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 }
 
+export function applyLocalStoryVersion(
+  storyId: string,
+  input: {
+    title: string;
+    content: string;
+    cover_image?: string;
+    category?: string;
+    author?: string;
+  }
+): Story | null {
+  const existing = readStoredMainnetStory(storyId);
+  if (!existing) return null;
+  const current = existing.versions[existing.current_version];
+  const nextId = String(
+    Math.max(0, ...Object.keys(existing.versions).map((id) => Number(id) || 0)) +
+      1
+  );
+  const updated: Story = {
+    ...existing,
+    current_version: nextId,
+    versions: {
+      ...existing.versions,
+      [nextId]: {
+        id: Number(nextId),
+        title: input.title || current.title,
+        content: input.content || current.content,
+        cover_image: input.cover_image || current.cover_image,
+        author: input.author || current.author,
+        timestamp: String(nowSeconds()),
+        category: (input.category || current.category || "Uncategorized") as StoryCategory,
+        votes: 0,
+      },
+    },
+  };
+  updateStoredMainnetStory(updated);
+  return updated;
+}
+
+export function applyLocalStoryUpvote(
+  storyId: string,
+  versionId: string
+): Story | null {
+  const existing = readStoredMainnetStory(storyId);
+  if (!existing?.versions[versionId]) return null;
+  const version = existing.versions[versionId];
+  const updated: Story = {
+    ...existing,
+    versions: {
+      ...existing.versions,
+      [versionId]: {
+        ...version,
+        votes: (Number(version.votes) || 0) + 1,
+      },
+    },
+  };
+  updateStoredMainnetStory(updated);
+  return updated;
+}
+
 export async function spawnMainnetStoryProcess(
   input: MainnetStoryInput
 ): Promise<StoredMainnetStory> {
@@ -245,12 +319,7 @@ export async function spawnMainnetStoryProcess(
   const authority = getAuthority();
   const nodeUrl = getHyperbeamWriteUrl();
   const moduleId = getModule();
-  const ao = connect({
-    MODE: "mainnet",
-    URL: nodeUrl,
-    SCHEDULER: scheduler,
-    signer,
-  } as any);
+  const ao = getMainnetAO(signer)!;
   const processData = clean(input.title) || "PermaTell Story";
   const processTags = sanitizeTags([
     { name: "Authority", value: authority },

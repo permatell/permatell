@@ -10,7 +10,7 @@
  *
  * Env (optional overrides; never commit JWKs):
  *   AO_WALLET_PATH / WALLET_PATH
- *   NEXT_PUBLIC_AO_WRITE_URL (default https://hb.portalinto.com)
+ *   NEXT_PUBLIC_AO_WRITE_URL (default https://app-1.forward.computer)
  *   NEXT_PUBLIC_AO_MAINNET_SCHEDULER (required)
  *   NEXT_PUBLIC_AO_MAINNET_MODULE
  *   NEXT_PUBLIC_AO_MAINNET_AUTHORITY
@@ -34,7 +34,7 @@ const ROOT = resolve(__dirname, "..");
 
 const DEFAULT_MODULE = "ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s";
 const DEFAULT_AUTHORITY = "a5ZMUKbGClAsKzB4SHDYrwkOZZHIIfpbaxrmKwUHCe8";
-const DEFAULT_WRITE_URL = "https://hb.portalinto.com";
+const DEFAULT_WRITE_URL = "https://app-1.forward.computer";
 const PORTAL_SCHEDULER = "n_XZJhUnmldNFo4dhajoPZWhBXuJk-OcQr5JQ49c4Zo";
 const APP1_WRITE_URL = "https://app-1.forward.computer";
 const PLACEHOLDER = "__STORY_POINTS_PROCESS_ID__";
@@ -122,12 +122,26 @@ function requireConfig() {
   return { writeUrl, scheduler, moduleId, authority, device };
 }
 
-function spawnCandidateUrls(writeUrl, scheduler) {
-  const urls = [writeUrl];
-  if (hasFlag("--no-fallback")) return dedupeUrls(urls);
-  if (scheduler === PORTAL_SCHEDULER && writeUrl !== APP1_WRITE_URL) {
-    urls.push(APP1_WRITE_URL);
+function isHungPortalWriteUrl(url) {
+  try {
+    const host = new URL(normalizeUrl(url)).hostname.toLowerCase();
+    return host === "hb.portalinto.com" || host.endsWith(".portalinto.com");
+  } catch {
+    return /portalinto\.com/i.test(String(url || ""));
   }
+}
+
+function spawnCandidateUrls(writeUrl, scheduler) {
+  const urls = [];
+  if (!isHungPortalWriteUrl(writeUrl)) urls.push(writeUrl);
+  else {
+    console.warn(
+      `Skipping hung Portal write URL ${writeUrl}; using ${APP1_WRITE_URL}`
+    );
+  }
+  if (hasFlag("--no-fallback")) return dedupeUrls(urls.length ? urls : [APP1_WRITE_URL]);
+  if (scheduler === PORTAL_SCHEDULER) urls.push(APP1_WRITE_URL);
+  if (!urls.length) urls.push(APP1_WRITE_URL);
   return dedupeUrls(urls);
 }
 

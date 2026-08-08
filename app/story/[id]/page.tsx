@@ -25,6 +25,7 @@ import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
 import ReactMarkdown from "react-markdown";
 import { BiNetworkChart } from "react-icons/bi";
 import { useRouter } from "next/navigation";
+import { isCompleteHttpUrl, safeCoverImageSrc } from "@/lib/utils";
 
 const StoryPage = () => {
   const {
@@ -40,6 +41,7 @@ const StoryPage = () => {
   const [editedTitle, setEditedTitle] = useState("");
   const [editedContent, setEditedContent] = useState<string>("");
   const [editedCoverImage, setEditedCoverImage] = useState("");
+  const [coverPreview, setCoverPreview] = useState("");
   const [editedCategory, setEditedCategory] = useState("");
   const { address: author } = useWallet();
   const [isSaving, setIsSaving] = useState(false);
@@ -69,6 +71,11 @@ const StoryPage = () => {
         setEditedTitle(currentVersion.title);
         setEditedContent(currentVersion.content);
         setEditedCoverImage(currentVersion.cover_image);
+        setCoverPreview(
+          isCompleteHttpUrl(currentVersion.cover_image)
+            ? currentVersion.cover_image
+            : ""
+        );
         setEditedCategory(currentVersion.category || "Uncategorized");
       }
     } catch (error) {
@@ -252,6 +259,13 @@ const StoryPage = () => {
                 <Input
                   value={editedCoverImage}
                   onChange={(e) => setEditedCoverImage(e.target.value)}
+                  onBlur={() =>
+                    setCoverPreview(
+                      isCompleteHttpUrl(editedCoverImage)
+                        ? editedCoverImage.trim()
+                        : ""
+                    )
+                  }
                   placeholder="https://example.com/image.jpg"
                   className="bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
                   disabled={isSaving || isRefreshing}
@@ -406,11 +420,9 @@ const StoryPage = () => {
         >
           <div className="bg-gradient-to-br from-black/50 to-[#0F0514]/50 backdrop-blur-md border border-gray-800/50 shadow-lg p-4 rounded-lg relative isolate">
             <img
-              src={
-                isEditing
-                  ? editedCoverImage || "/no_cover.webp"
-                  : currentVersion?.cover_image || "/no_cover.webp"
-              }
+              src={safeCoverImageSrc(
+                isEditing ? coverPreview : currentVersion?.cover_image
+              )}
               alt="Story cover"
               className="w-full h-auto object-cover rounded-lg shadow-md"
             />

@@ -8,6 +8,7 @@ import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { useNetworkMode } from "@/contexts/NetworkModeContext";
+import { getHyperbeamWriteUrl } from "@/lib/ao-config";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -32,11 +33,7 @@ export function Navbar() {
   const networkMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const canSwitchNetwork = process.env.NEXT_PUBLIC_AO_LOCK_NETWORK !== "true";
-  const writeNode =
-    process.env.NEXT_PUBLIC_AO_WRITE_URL ||
-    process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL ||
-    process.env.NEXT_PUBLIC_HYPERBEAM_URL ||
-    "https://app-1.forward.computer";
+  const writeNode = getHyperbeamWriteUrl();
   const nodeLabel = formatNodeLabel(writeNode);
   const scheduler = process.env.NEXT_PUBLIC_AO_MAINNET_SCHEDULER || "";
   const shortScheduler = scheduler

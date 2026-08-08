@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  DEFAULT_HYPERBEAM_WRITE_URL,
+  getHyperbeamWriteUrl,
+  isHungPortalWriteUrl,
+  MAINNET_DEVICE,
+  normalizeHyperbeamUrl,
+} from "@/lib/ao-config";
+
 function getUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
   if (input instanceof URL) return input.toString();
@@ -57,14 +65,21 @@ function dedupe(values: string[]): string[] {
   return out;
 }
 
+/**
+ * Write nodes for HyperBEAM POST /push. Never include hung Portal
+ * (hb.portalinto.com). Prefer the resolved write URL, then explicit env,
+ * then app-1.forward.computer.
+ */
 function getWriteNodeUrls(): string[] {
-  return dedupe([
-    process.env.NEXT_PUBLIC_AO_WRITE_URL || "",
-    process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL || "",
-    process.env.NEXT_PUBLIC_HYPERBEAM_URL || "",
-    "https://app-1.forward.computer",
-    "https://hb.portalinto.com",
-  ]);
+  return dedupe(
+    [
+      getHyperbeamWriteUrl(),
+      normalizeHyperbeamUrl(process.env.NEXT_PUBLIC_AO_WRITE_URL),
+      normalizeHyperbeamUrl(process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL),
+      normalizeHyperbeamUrl(process.env.NEXT_PUBLIC_HYPERBEAM_URL),
+      DEFAULT_HYPERBEAM_WRITE_URL,
+    ].filter((url) => url && !isHungPortalWriteUrl(url))
+  );
 }
 
 function rewriteHost(url: string, nodeBase: string): string {
@@ -81,16 +96,41 @@ function rewritePushToSchedule(url: string): string {
   return parsed.toString();
 }
 
+function rewriteProcessToRelay(url: string): string | null {
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (!parsed.pathname.includes("~process@1.0/")) return null;
+    parsed.pathname = parsed.pathname.replace(
+      /~process@1\.0\//g,
+      "~relay@1.0/"
+    );
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * aoconnect mainnet `message()` hardcodes `/{id}~process@1.0/push` and
+ * ignores `connect({ device })`. Prefer relay@1.0 for Wander ANS-104
+ * DataItems; keep the original process@1.0 path as a same-node fallback.
+ * Spawn `/push` (no process id) is unchanged.
+ */
+function deviceVariants(url: string): string[] {
+  if (MAINNET_DEVICE !== "relay@1.0") return [url];
+  const relayUrl = rewriteProcessToRelay(url);
+  return relayUrl ? [relayUrl, url] : [url];
+}
+
 function buildAttemptUrls(url: string): string[] {
   const nodes = getWriteNodeUrls();
   const urls: string[] = [];
   for (const node of nodes) {
-    urls.push(withQueryParam(rewriteHost(url, node), "async", "true"));
-  }
-  for (const node of nodes) {
-    const hostUrl = rewriteHost(url, node);
-    urls.push(hostUrl);
-    urls.push(rewritePushToSchedule(hostUrl));
+    for (const hostUrl of deviceVariants(rewriteHost(url, node))) {
+      urls.push(withQueryParam(hostUrl, "async", "true"));
+      urls.push(hostUrl);
+      urls.push(rewritePushToSchedule(hostUrl));
+    }
   }
   const seen = new Set<string>();
   return urls.filter((attemptUrl) => {
@@ -140,7 +180,13 @@ async function fetchWithTimeout(
 }
 
 function isRetryableResponse(response: Response): boolean {
-  return response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500;
+  return (
+    response.status === 404 ||
+    response.status === 408 ||
+    response.status === 425 ||
+    response.status === 429 ||
+    response.status >= 500
+  );
 }
 
 async function responseBody(response: Response): Promise<string> {

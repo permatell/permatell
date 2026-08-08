@@ -82,6 +82,29 @@ const MAINNET_ENDPOINTS = {
 // Mainnet HyperBEAM defaults (Portal-like)
 // ---------------------------------------------------------------------------
 
+export const DEFAULT_HYPERBEAM_WRITE_URL = "https://app-1.forward.computer";
+const AO_PROCESS_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+export function normalizeHyperbeamUrl(value?: string | null): string {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+/** Portal currently hangs on POST /push (spawn + process device writes). */
+export function isHungPortalWriteUrl(url: string): boolean {
+  const normalized = normalizeHyperbeamUrl(url);
+  if (!normalized) return false;
+  try {
+    const host = new URL(normalized).hostname.toLowerCase();
+    return host === "hb.portalinto.com" || host.endsWith(".portalinto.com");
+  } catch {
+    return /portalinto\.com/i.test(normalized);
+  }
+}
+
+export function isAoProcessId(id?: string | null): boolean {
+  return AO_PROCESS_ID_PATTERN.test(String(id || "").trim());
+}
+
 export const MAINNET_DEFAULTS = {
   /**
    * HyperBEAM node base URL used for general reads / operator experiments.
@@ -94,10 +117,7 @@ export const MAINNET_DEFAULTS = {
    * scheduler/authority triple is used there, while hb.portalinto.com currently
    * hangs on Node POST /push spawn.
    */
-  writeUrl:
-    process.env.NEXT_PUBLIC_AO_WRITE_URL ||
-    process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL ||
-    "https://app-1.forward.computer",
+  writeUrl: DEFAULT_HYPERBEAM_WRITE_URL,
   authority:
     process.env.NEXT_PUBLIC_AO_MAINNET_AUTHORITY ||
     process.env.NEXT_PUBLIC_AO_AUTHORITY ||
@@ -338,12 +358,31 @@ export function getHyperbeamUrl(): string | null {
   return process.env.NEXT_PUBLIC_HYPERBEAM_URL || MAINNET_DEFAULTS.hyperbeamUrl;
 }
 
+/**
+ * HyperBEAM URL used for spawn / message / push writes.
+ * Never returns Portal: `hb.portalinto.com/push` hangs, including per-story
+ * `~process@1.0/push` after create. Prefer NEXT_PUBLIC_AO_WRITE_URL, then
+ * NEXT_PUBLIC_HYPERBEAM_URL, then app-1.forward.computer.
+ */
 export function getHyperbeamWriteUrl(): string {
-  return MAINNET_DEFAULTS.writeUrl;
+  const configured =
+    normalizeHyperbeamUrl(process.env.NEXT_PUBLIC_AO_WRITE_URL) ||
+    normalizeHyperbeamUrl(process.env.NEXT_PUBLIC_HYPERBEAM_WRITE_URL) ||
+    normalizeHyperbeamUrl(process.env.NEXT_PUBLIC_HYPERBEAM_URL) ||
+    DEFAULT_HYPERBEAM_WRITE_URL;
+
+  if (isHungPortalWriteUrl(configured)) {
+    console.warn(
+      `[ao-config] ${configured} hangs on POST /push; using ${DEFAULT_HYPERBEAM_WRITE_URL} for writes`
+    );
+    return DEFAULT_HYPERBEAM_WRITE_URL;
+  }
+  return configured;
 }
 
 let _mainnetSingleton: ReturnType<typeof originalConnect> | null = null;
 let _mainnetSigner: unknown = undefined;
+let _mainnetUrl: string | null = null;
 
 /**
  * Returns the mainnet AO connection (Portal-style HyperBEAM).
@@ -371,13 +410,15 @@ export function getMainnetAO(signer?: unknown) {
   }
 
   const s = signer ?? _mainnetSigner;
-  if (!_mainnetSingleton || _mainnetSigner !== s) {
+  if (!_mainnetSingleton || _mainnetSigner !== s || _mainnetUrl !== url) {
     _mainnetSigner = s;
+    _mainnetUrl = url;
     const config: Record<string, unknown> = {
       MODE: "mainnet",
       URL: url,
-      // Prefer relay@1.0 for browser DataItem signers. process@1.0 push often
-      // expects RFC-9421 HTTP signatures that wallet extensions do not provide.
+      // Informational for aoconnect; browser fetch wrapper also rewrites
+      // ~process@1.0/push → ~relay@1.0/push when this is relay@1.0.
+      // Signing stays ANS-104 DataItem (Wander), not RFC-9421 HTTP-sig.
       device: MAINNET_DEVICE,
       SCHEDULER: scheduler,
       GATEWAY_URL: "https://arweave.net",

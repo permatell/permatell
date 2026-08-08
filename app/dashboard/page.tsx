@@ -31,6 +31,7 @@ import {
   type PompCampaignInfo,
   type PompClaimedAsset,
 } from "@/lib/pomp";
+import { safeCoverImageSrc } from "@/lib/utils";
 
 function PompDiscoveryCardBody({
   pomp,
@@ -293,10 +294,9 @@ const Dashboard = () => {
                     <div className="md:flex h-full">
                       <div className="md:w-1/3 h-48 md:h-full relative">
                         <img
-                          src={
-                            topStories[currentSlide].version_data.cover_image ||
-                            "/no_cover.webp"
-                          }
+                          src={safeCoverImageSrc(
+                            topStories[currentSlide].version_data.cover_image
+                          )}
                           alt={`Cover for ${topStories[currentSlide].version_data.title}`}
                           className="absolute inset-0 w-full h-full object-cover"
                         />
@@ -620,7 +620,7 @@ const Dashboard = () => {
                     </div>
                     <div className="relative h-28">
                       <img
-                        src={story.version_data.cover_image || "/no_cover.webp"}
+                        src={safeCoverImageSrc(story.version_data.cover_image)}
                         alt={`Cover for ${story.version_data.title}`}
                         className="absolute inset-0 w-full h-full object-cover"
                       />

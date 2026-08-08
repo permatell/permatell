@@ -8,6 +8,7 @@ import {
   MAINNET_PROCESS_IDS,
   createDataItemSigner,
   HAS_EXPLICIT_MAINNET_PROCESS_IDS,
+  isAoProcessId,
 } from "@/lib/ao-config";
 import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
 import { useWallet } from "@/contexts/WalletContext";
@@ -19,6 +20,8 @@ import {
   type StoryAtomicAssetResult,
 } from "@/lib/permatellAssets";
 import {
+  applyLocalStoryUpvote,
+  applyLocalStoryVersion,
   readStoredMainnetCurrentStories,
   readStoredMainnetStory,
   spawnMainnetStoryProcess,
@@ -108,6 +111,10 @@ export const StoriesProcessProvider: React.FC<{
   const processId = useMainnetRegistryProcess
     ? MAINNET_PROCESS_IDS.stories
     : PROCESS_IDS.stories;
+
+  /** Per-story HyperBEAM processes use the process id as the story id. */
+  const isPerStoryProcessId = (storyId?: string) =>
+    networkMode === "mainnet" && isAoProcessId(storyId);
 
   const sendMessage = async (
     tags: { name: string; value: string }[],
@@ -290,7 +297,7 @@ export const StoriesProcessProvider: React.FC<{
   }) => {
     setLoading(true);
     try {
-      if (useMainnetPerStoryProcesses) {
+      if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
         await sendMessage(
           [
             { name: "Action", value: "CreateStoryVersion" },
@@ -301,6 +308,14 @@ export const StoriesProcessProvider: React.FC<{
           payload.content,
           payload.story_id
         );
+        const updated = applyLocalStoryVersion(payload.story_id, {
+          title: payload.title,
+          content: payload.content,
+          cover_image: payload.cover_image,
+          category: payload.category,
+          author: address || undefined,
+        });
+        if (updated) setCurrentStory(updated);
         await getStories();
         return;
       }
@@ -329,6 +344,7 @@ export const StoriesProcessProvider: React.FC<{
       await getStories();
     } catch (error) {
       console.error("Error creating story version:", error);
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -340,7 +356,7 @@ export const StoriesProcessProvider: React.FC<{
   }): Promise<void> => {
     setLoading(true);
     try {
-      if (useMainnetPerStoryProcesses) {
+      if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
         await sendMessage(
           [
             { name: "Action", value: "RevertStoryToVersion" },
@@ -361,6 +377,7 @@ export const StoriesProcessProvider: React.FC<{
       await getStories();
     } catch (error) {
       console.error("Error reverting story:", error);
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -369,34 +386,38 @@ export const StoriesProcessProvider: React.FC<{
   const getStories = useCallback(async () => {
     setLoading(true);
     try {
+      const localStories = readStoredMainnetCurrentStories();
       if (useMainnetPerStoryProcesses) {
-        setStories(readStoredMainnetCurrentStories());
+        setStories(localStories);
         return;
       }
 
       const result = await getDryrunResult([
         { name: "Action", value: "GetStories" },
       ]);
-      if (Array.isArray(result)) {
-        setStories(result);
-      } else {
-        setStories([]);
+      const registryStories = Array.isArray(result) ? result : [];
+      const byId = new Map(registryStories.map((story) => [story.id, story]));
+      for (const local of localStories) {
+        if (!byId.has(local.id)) byId.set(local.id, local);
       }
+      setStories(Array.from(byId.values()));
     } catch (error) {
       console.error("Error fetching stories:", error);
-      setStories([]);
+      setStories(readStoredMainnetCurrentStories());
     } finally {
       setLoading(false);
     }
-  }, [getDryrunResult]);
+  }, [getDryrunResult, useMainnetPerStoryProcesses]);
 
   const getStory = async (payload: {
     story_id: string;
   }): Promise<Story | null> => {
     setLoading(true);
     try {
-      if (useMainnetPerStoryProcesses) {
-        return readStoredMainnetStory(payload.story_id);
+      if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
+        const local = readStoredMainnetStory(payload.story_id);
+        if (local) return local;
+        if (useMainnetPerStoryProcesses) return null;
       }
 
       const result = await getDryrunResult([
@@ -421,7 +442,7 @@ export const StoriesProcessProvider: React.FC<{
   }): Promise<void> => {
     setLoading(true);
     try {
-      if (useMainnetPerStoryProcesses) {
+      if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
         await sendMessage(
           [
             { name: "Action", value: "UpvoteStoryVersion" },
@@ -430,6 +451,8 @@ export const StoriesProcessProvider: React.FC<{
           undefined,
           payload.story_id
         );
+        const updated = applyLocalStoryUpvote(payload.story_id, payload.version_id);
+        if (updated) setCurrentStory(updated);
         await getStories();
         return;
       }
@@ -442,6 +465,7 @@ export const StoriesProcessProvider: React.FC<{
       await getStories();
     } catch (error) {
       console.error("Error upvoting story:", error);
+      throw error;
     } finally {
       setLoading(false);
     }

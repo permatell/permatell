@@ -84,7 +84,7 @@ async function main() {
   const writeUrl =
     normalizeUrl(process.env.NEXT_PUBLIC_AO_WRITE_URL) ||
     normalizeUrl(process.env.NEXT_PUBLIC_HYPERBEAM_URL) ||
-    "https://hb.portalinto.com";
+    "https://app-1.forward.computer";
   const scheduler = clean(process.env.NEXT_PUBLIC_AO_MAINNET_SCHEDULER);
   const stories = clean(process.env.NEXT_PUBLIC_MAINNET_STORIES_PROCESS_ID);
   const storyPoints = clean(

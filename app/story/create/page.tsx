@@ -22,6 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { motion } from "framer-motion";
 import { CustomMarkdownEditor } from "@/components/ui/markdown-editor";
 import type { StoryAtomicAssetResult } from "@/lib/permatellAssets";
+import { isCompleteHttpUrl, safeCoverImageSrc } from "@/lib/utils";
 
 export default function CreateStoryPage() {
   const { createStory, loading } = useStoriesProcess();
@@ -32,6 +33,7 @@ export default function CreateStoryPage() {
   const [content, setContent] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [coverImage, setCoverImage] = useState("");
+  const [coverPreview, setCoverPreview] = useState("");
   const [category, setCategory] = useState<string>("Uncategorized");
   const [mintAtomicAsset, setMintAtomicAsset] = useState(false);
   const [assetDescription, setAssetDescription] = useState("");
@@ -67,7 +69,7 @@ export default function CreateStoryPage() {
     }
   };
 
-  const coverImageSrc = coverImage || "/no_cover.webp";
+  const coverImageSrc = safeCoverImageSrc(coverPreview);
 
   return (
     <div className="container mx-auto py-6 px-4">
@@ -151,6 +153,11 @@ export default function CreateStoryPage() {
               id="coverImage"
               value={coverImage}
               onChange={(e) => setCoverImage(e.target.value)}
+              onBlur={() =>
+                setCoverPreview(
+                  isCompleteHttpUrl(coverImage) ? coverImage.trim() : ""
+                )
+              }
               placeholder="https://example.com/image.jpg"
               className="bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
             />
