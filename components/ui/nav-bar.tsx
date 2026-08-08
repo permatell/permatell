@@ -148,7 +148,7 @@ export function Navbar() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-colors"
               >
                 <Image
-                  src="/pomp-logo.svg"
+                  src="/pomp-logo.png"
                   alt=""
                   width={18}
                   height={18}
@@ -193,7 +193,7 @@ export function Navbar() {
                     >
                       {item.href === "/pomp" && (
                         <Image
-                          src="/pomp-logo.svg"
+                          src="/pomp-logo.png"
                           alt=""
                           width={18}
                           height={18}

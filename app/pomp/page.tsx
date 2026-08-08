@@ -865,7 +865,7 @@ export default function PompPage() {
           </div>
           <div className="flex items-center gap-4">
             <Image
-              src="/pomp-logo.svg"
+              src="/pomp-logo.png"
               alt="POMP logo — Proof of Memory Protocol"
               width={72}
               height={72}

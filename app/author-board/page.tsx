@@ -271,7 +271,7 @@ const AuthorBoard: React.FC = () => {
         <div className="mb-5">
           <div className="flex items-center gap-3">
             <Image
-              src="/pomp-logo.svg"
+              src="/pomp-logo.png"
               alt="POMP logo"
               width={36}
               height={36}
