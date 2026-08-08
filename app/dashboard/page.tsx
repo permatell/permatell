@@ -638,14 +638,13 @@ const Dashboard = () => {
             <Spinner className="text-purple-500" />
           </div>
         ) : pomps.length > 0 ? (
-          <HorizontalCarousel>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {pomps.map((pomp, index) => (
               <motion.div
                 key={pomp.assetId}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(index, 8) * 0.05 }}
-                className="w-[260px] shrink-0 snap-start"
+                transition={{ delay: index * 0.05 }}
               >
                 <CardContainer className="overflow-hidden flex flex-col relative h-[300px] bg-gradient-to-br from-black to-[#0F0514]/95 backdrop-blur-md border border-purple-500/25 shadow-lg hover:shadow-purple-500/20 transition-all duration-300">
                   <div className="absolute top-2 right-2 z-10 rounded-full bg-black/80 px-2 py-1 text-[11px] font-semibold text-purple-100">
@@ -710,7 +709,7 @@ const Dashboard = () => {
                 </CardContainer>
               </motion.div>
             ))}
-          </HorizontalCarousel>
+          </div>
         ) : (
           <div className="rounded-lg border border-gray-800 bg-black/30 p-6 text-center text-gray-400">
             No POMPs discovered yet.
