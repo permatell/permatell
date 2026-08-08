@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
 import { useEvmWallet } from "@/contexts/EvmWalletContext";
+import { EvmOwnerPanel } from "@/components/pomp/evm-owner-panel";
 import {
   createNativePompAtomicAsset,
   createPompAtomicAsset,
@@ -203,10 +204,15 @@ export default function PompPage() {
     loading: arweaveWalletLoading,
     walletType,
   } = useWallet();
-  const { evmAddress, connectEvm } = useEvmWallet();
+  const {
+    evmAddress,
+    connectEvm,
+    poapOwnerAddress,
+    setPoapOwnerAddress,
+    isAddressProven,
+  } = useEvmWallet();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<PompMode>("poap");
-  const [ownerAddress, setOwnerAddress] = useState("");
   const [poaps, setPoaps] = useState<OwnedPoap[]>([]);
   const [selectedPoap, setSelectedPoap] = useState<OwnedPoap | null>(null);
   const [loadingPoaps, setLoadingPoaps] = useState(false);
@@ -270,11 +276,12 @@ export default function PompPage() {
     const archiveEndDate = searchParams.get("endDate") || "";
     const archiveNetwork = networkFromPoap(searchParams.get("network") || "gnosis");
     const archiveSnapshot = searchParams.get("archiveSnapshot") || "2026-07-02";
+    const archiveOwner = poapOwnerAddress?.trim() || evmAddress || "";
     const hydrationKey = [
       archiveDropId,
       archiveTokenId,
       archiveNetwork,
-      evmAddress || "",
+      archiveOwner,
     ].join(":");
     if (archiveHydrationKey.current === hydrationKey) return;
     archiveHydrationKey.current = hydrationKey;
@@ -294,7 +301,7 @@ export default function PompPage() {
       endDate: archiveEndDate,
       year: searchParams.get("year") || "",
       network: archiveNetwork,
-      ownerAddress: evmAddress || "",
+      ownerAddress: archiveOwner,
       raw: {
         source: "poap-archive-arweave",
         archive: {
@@ -319,8 +326,10 @@ export default function PompPage() {
     setStartDate(dateInputValue(archiveStartDate));
     setEndDate(dateInputValue(archiveEndDate));
     setVerification(null);
-    if (!evmAddress) {
-      toast.message("Archived POAP loaded. Connect the EVM wallet to verify ownership.");
+    if (!archiveOwner) {
+      toast.message(
+        "Archived POAP loaded. Connect or enter the EVM address to verify ownership."
+      );
       return;
     }
 
@@ -330,7 +339,7 @@ export default function PompPage() {
     verifyPoapOwnership({
       network: archiveNetwork,
       tokenId: archiveTokenId,
-      ownerAddress: evmAddress,
+      ownerAddress: archiveOwner,
     })
       .then((result) => {
         if (cancelled) return;
@@ -354,12 +363,19 @@ export default function PompPage() {
     return () => {
       cancelled = true;
     };
-  }, [evmAddress, searchParams]);
+  }, [evmAddress, poapOwnerAddress, searchParams]);
 
   const activeOwner = useMemo(
-    () => ownerAddress.trim() || evmAddress || "",
-    [ownerAddress, evmAddress]
+    () => poapOwnerAddress?.trim() || evmAddress || "",
+    [poapOwnerAddress, evmAddress]
   );
+  /**
+   * POAP ownership is read with `ownerOf`, so any address passes that check --
+   * including one the visitor merely typed in. Claiming is permanent and first
+   * claim wins, so it additionally requires proof that the visitor controls the
+   * address, via a live wallet connection or a verified signature.
+   */
+  const ownerProven = isAddressProven(activeOwner);
   const currentOrigin =
     typeof window === "undefined" ? "" : window.location.origin;
   const arweaveMintAddress =
@@ -373,6 +389,7 @@ export default function PompPage() {
   const missingMintRequirement = useMemo(() => {
     if (isPoapMode && !selectedPoap) return "Select a POAP";
     if (isPoapMode && !verification?.owns) return "Verify selected POAP";
+    if (isPoapMode && !ownerProven) return "Prove you control the EVM address";
     if (!arweaveMintAddress) return "Connect Wander or ArConnect";
     if (!title.trim()) return "Confirm a POMP title";
     if (!isPoapMode && !startDate.trim()) return "Add an event start date";
@@ -385,6 +402,7 @@ export default function PompPage() {
     campaignEnabled,
     claimWord,
     isPoapMode,
+    ownerProven,
     selectedPoap,
     startDate,
     title,
@@ -393,7 +411,7 @@ export default function PompPage() {
   const canMint =
     (!isPoapMode || Boolean(selectedPoap)) &&
     Boolean(arweaveMintAddress) &&
-    (!isPoapMode || Boolean(verification?.owns)) &&
+    (!isPoapMode || (Boolean(verification?.owns) && ownerProven)) &&
     Boolean(title.trim()) &&
     (!isPoapMode || Boolean(tokenId.trim())) &&
     (isPoapMode ||
@@ -469,7 +487,6 @@ export default function PompPage() {
     try {
       const connected = await connectEvm();
       if (connected) {
-        setOwnerAddress(connected);
         toast.success("EVM wallet connected.");
       } else {
         toast.error("Unable to connect EVM wallet.");
@@ -488,7 +505,7 @@ export default function PompPage() {
         toast.error("Connect or enter an EVM wallet before loading POAPs.");
         return;
       }
-      setOwnerAddress(collector);
+      setPoapOwnerAddress(collector);
       const result = await fetchOwnedPoapsPage(collector, 1);
       setPoaps(result.poaps);
       setPoapPage(result.page);
@@ -696,6 +713,12 @@ export default function PompPage() {
   const handleMint = async () => {
     if (isPoapMode && (!selectedPoap || !verification?.owns)) {
       toast.error("Select and verify a POAP before minting.");
+      return;
+    }
+    if (isPoapMode && !ownerProven) {
+      toast.error(
+        "Connect this EVM wallet or add a signed ownership proof before claiming."
+      );
       return;
     }
     if (!arweaveMintAddress || !globalThis.arweaveWallet) {
@@ -933,18 +956,23 @@ export default function PompPage() {
                 Step 1
               </p>
               <h2 className="mt-1 font-semibold text-white">
-                {isPoapMode ? "Connect EVM Wallet" : "POAP Wallet Optional"}
+                {isPoapMode ? "Set Your EVM Address" : "POAP Wallet Optional"}
               </h2>
               <p className="mt-2 text-sm text-gray-300">
                 {isPoapMode
-                  ? "Used only to find and verify your POAP ownership."
+                  ? "Connect a wallet, or enter an address to browse POAPs read-only."
                   : "Only needed when migrating existing POAPs."}
               </p>
               <p className="mt-3 font-mono text-sm text-emerald-100">
                 {activeOwner
                   ? `${activeOwner.slice(0, 6)}...${activeOwner.slice(-4)}`
-                  : "Not connected"}
+                  : "Not set"}
               </p>
+              {isPoapMode && activeOwner && (
+                <p className="mt-1 text-xs text-emerald-200/70">
+                  {ownerProven ? "Control proven" : "View only"}
+                </p>
+              )}
             </div>
             <Button
               type="button"
@@ -1053,15 +1081,7 @@ export default function PompPage() {
             )}
           </div>
 
-          {isPoapMode && (
-            <Input
-              label="Owner EVM address"
-              value={ownerAddress}
-              onChange={(event) => setOwnerAddress(event.target.value)}
-              placeholder={evmAddress || "0x..."}
-              className="mb-5 bg-black/40 border-gray-800"
-            />
-          )}
+          {isPoapMode && <EvmOwnerPanel className="mb-5" />}
 
           {isPoapMode && poaps.length > 0 ? (
             <div className="space-y-4">
@@ -1664,6 +1684,12 @@ export default function PompPage() {
                   <span className="text-gray-300">POAP ownership</span>
                   <span className={verification?.owns ? "text-emerald-300" : "text-gray-500"}>
                     {verification?.owns ? "Verified" : "Required"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-gray-300">EVM address control</span>
+                  <span className={ownerProven ? "text-emerald-300" : "text-gray-500"}>
+                    {ownerProven ? "Proven" : "Required to claim"}
                   </span>
                 </div>
               </>

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Search, ShieldCheck, Wallet } from "lucide-react";
+import { ArrowRight, Search, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EvmOwnerPanel } from "@/components/pomp/evm-owner-panel";
 import { useEvmWallet } from "@/contexts/EvmWalletContext";
 import { POAP_NETWORK_OPTIONS, verifyPoapOwnership } from "@/lib/pomp";
 import type { PoapNetworkKey, PoapOwnershipResult } from "@/lib/pomp";
@@ -59,7 +60,7 @@ function createPompUrl(
 }
 
 export default function PoapArchivePage() {
-  const { evmAddress, connectEvm } = useEvmWallet();
+  const { evmAddress, poapOwnerAddress } = useEvmWallet();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ArchiveResult[]>([]);
   const [selected, setSelected] = useState<ArchiveResult | null>(null);
@@ -72,9 +73,13 @@ export default function PoapArchivePage() {
   const [loadingOwnedPoap, setLoadingOwnedPoap] = useState(false);
   const ownedLookupKey = useRef("");
 
+  // Connecting a wallet is only one way to set this; on mobile in-app browsers
+  // the address is entered by hand instead. Both are read-only for lookups.
+  const activeOwner = poapOwnerAddress?.trim() || evmAddress || "";
+
   useEffect(() => {
-    if (!selected || !evmAddress) return;
-    const lookupKey = `${evmAddress}:${selected.dropId}`;
+    if (!selected || !activeOwner) return;
+    const lookupKey = `${activeOwner}:${selected.dropId}`;
     if (ownedLookupKey.current === lookupKey) return;
     ownedLookupKey.current = lookupKey;
 
@@ -85,7 +90,7 @@ export default function PoapArchivePage() {
     setTokenId("");
     fetch(
       `/api/poap/collector?address=${encodeURIComponent(
-        evmAddress
+        activeOwner
       )}&dropId=${encodeURIComponent(selected.dropId)}`,
       { cache: "no-store" }
     )
@@ -122,7 +127,7 @@ export default function PoapArchivePage() {
     return () => {
       cancelled = true;
     };
-  }, [evmAddress, selected]);
+  }, [activeOwner, selected]);
 
   const pompHref = useMemo(
     () =>
@@ -159,25 +164,19 @@ export default function PoapArchivePage() {
     }
   };
 
-  const connectEvmWallet = async () => {
-    try {
-      await connectEvm();
-    } catch (error: any) {
-      toast.error(error?.message || "Unable to connect an EVM wallet.");
-    }
-  };
-
   const verifyOwnership = async () => {
     if (!selected) return toast.error("Select an archived POAP first.");
     if (!/^\d+$/.test(tokenId.trim())) return toast.error("Enter the POAP token ID.");
-    if (!evmAddress) return toast.error("Connect the EVM wallet that owns this POAP.");
+    if (!activeOwner) {
+      return toast.error("Connect or enter the EVM address that owns this POAP.");
+    }
     setVerifying(true);
     setVerification(null);
     try {
       const result = await verifyPoapOwnership({
         network,
         tokenId: tokenId.trim(),
-        ownerAddress: evmAddress,
+        ownerAddress: activeOwner,
       });
       setVerification(result);
       if (result.owns) toast.success("Current POAP ownership verified.");
@@ -207,26 +206,26 @@ export default function PoapArchivePage() {
         <Input
           value={tokenId}
           readOnly
-          placeholder={loadingOwnedPoap ? "Finding your POAP..." : "Connect wallet to find POAP"}
+          placeholder={
+            loadingOwnedPoap
+              ? "Finding your POAP..."
+              : activeOwner
+              ? "No POAP found for this address"
+              : "Set your EVM address to find POAP"
+          }
           className="border-gray-700 bg-black/40 text-white"
         />
         <select value={network} onChange={(event) => setNetwork(event.target.value as PoapNetworkKey)} className="h-10 rounded-md border border-gray-700 bg-black/40 px-3 text-sm text-white">
           {POAP_NETWORK_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
         </select>
-        {evmAddress ? (
-          <Button type="button" onClick={verifyOwnership} disabled={verifying || loadingOwnedPoap || !tokenId} className="gap-2">
-            <ShieldCheck className="h-4 w-4" />
-            {verifying ? "Verifying..." : "Verify ownership"}
-          </Button>
-        ) : (
-          <Button type="button" onClick={connectEvmWallet} className="gap-2">
-            <Wallet className="h-4 w-4" /> Connect EVM wallet
-          </Button>
-        )}
+        <Button type="button" onClick={verifyOwnership} disabled={verifying || loadingOwnedPoap || !tokenId || !activeOwner} className="gap-2">
+          <ShieldCheck className="h-4 w-4" />
+          {verifying ? "Verifying..." : "Verify ownership"}
+        </Button>
       </div>
       {verification?.owns && (
         <div className="mt-5 flex flex-col gap-3 rounded-md border border-emerald-400/30 bg-emerald-400/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-emerald-100">Ownership verified for {evmAddress?.slice(0, 6)}...{evmAddress?.slice(-4)}.</p>
+          <p className="text-sm text-emerald-100">Ownership verified for {activeOwner.slice(0, 6)}...{activeOwner.slice(-4)}.</p>
           <Link href={pompHref}>
             <Button type="button" className="gap-2 bg-emerald-600 hover:bg-emerald-500">
               Create POMP <ArrowRight className="h-4 w-4" />
@@ -258,6 +257,8 @@ export default function PoapArchivePage() {
           Archive provenance ↗
         </a>
       </div>
+
+      <EvmOwnerPanel className="mb-6" />
 
       <form onSubmit={searchArchive} className="mb-6 flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
