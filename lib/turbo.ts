@@ -333,7 +333,7 @@ export async function uploadImage(
           file.size
         )} image needs Turbo credits to upload (uploads up to ${formatBytes(
           FREE_UPLOAD_MAX_BYTES
-        )} are free). Top up at turbo.ardrive.io, or pick a smaller image.`
+        )} are free). Compress it to fit the free limit, top up at turbo.ardrive.io, or pick a smaller image.`
       );
     }
     throw error;
