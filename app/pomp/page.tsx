@@ -207,6 +207,7 @@ export default function PompPage() {
   const {
     evmAddress,
     connectEvm,
+    evmEnvironment,
     poapOwnerAddress,
     setPoapOwnerAddress,
     isAddressProven,
@@ -376,6 +377,12 @@ export default function PompPage() {
    * address, via a live wallet connection or a verified signature.
    */
   const ownerProven = isAddressProven(activeOwner);
+  /**
+   * On a phone there is no wallet to connect to in this browser, so a Connect
+   * button can only ever fail. The owner panel offers the app handoff instead.
+   */
+  const evmConnectUnavailable =
+    evmEnvironment.ready && evmEnvironment.capability === "unavailable";
   const currentOrigin =
     typeof window === "undefined" ? "" : window.location.origin;
   const arweaveMintAddress =
@@ -959,9 +966,11 @@ export default function PompPage() {
                 {isPoapMode ? "Set Your EVM Address" : "POAP Wallet Optional"}
               </h2>
               <p className="mt-2 text-sm text-gray-300">
-                {isPoapMode
-                  ? "Connect a wallet, or enter an address to browse POAPs read-only."
-                  : "Only needed when migrating existing POAPs."}
+                {!isPoapMode
+                  ? "Only needed when migrating existing POAPs."
+                  : evmConnectUnavailable
+                  ? "Enter an address below to browse POAPs, then prove it is yours to claim."
+                  : "Connect a wallet, or enter an address to browse POAPs read-only."}
               </p>
               <p className="mt-3 font-mono text-sm text-emerald-100">
                 {activeOwner
@@ -974,14 +983,16 @@ export default function PompPage() {
                 </p>
               )}
             </div>
-            <Button
-              type="button"
-              onClick={handleConnectEvmWallet}
-              disabled={!isPoapMode}
-              className="h-9 bg-emerald-500 px-3 text-sm text-white hover:bg-emerald-600"
-            >
-              {activeOwner ? "Switch" : "Connect"}
-            </Button>
+            {!evmConnectUnavailable && (
+              <Button
+                type="button"
+                onClick={handleConnectEvmWallet}
+                disabled={!isPoapMode}
+                className="h-9 bg-emerald-500 px-3 text-sm text-white hover:bg-emerald-600"
+              >
+                {activeOwner ? "Switch" : "Connect"}
+              </Button>
+            )}
           </div>
         </CardContainer>
 

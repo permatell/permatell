@@ -19,6 +19,10 @@ import {
   type EvmBrowserEnvironment,
 } from "@/lib/evmEnvironment";
 import {
+  getInjectedEvmProvider,
+  type Eip1193Provider,
+} from "@/lib/evmProvider";
+import {
   buildEvmOwnershipMessage,
   proofKey,
   readEvmProofs,
@@ -40,42 +44,6 @@ export interface SessionKeyData {
 
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
-type Eip1193Provider = {
-  request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on?: (event: string, handler: (...args: any[]) => void) => void;
-  removeListener?: (event: string, handler: (...args: any[]) => void) => void;
-  providers?: Eip1193Provider[];
-  isMetaMask?: boolean;
-  isRabby?: boolean;
-  isCoinbaseWallet?: boolean;
-  isBraveWallet?: boolean;
-  isPhantom?: boolean;
-  selectedAddress?: string;
-  chainId?: string;
-};
-
-function getInjectedEvmProvider(): Eip1193Provider | null {
-  if (typeof window === "undefined") return null;
-  const injected = window.ethereum as Eip1193Provider | undefined;
-  if (!injected) return null;
-
-  const providers = Array.isArray(injected.providers)
-    ? injected.providers
-    : [injected];
-
-  return (
-    providers.find((provider) => provider.isMetaMask) ||
-    providers.find((provider) => provider.isRabby) ||
-    providers.find((provider) => provider.isCoinbaseWallet) ||
-    providers.find((provider) => provider.isBraveWallet) ||
-    providers.find(
-      (provider) => provider.isPhantom && typeof provider.request === "function"
-    ) ||
-    providers.find((provider) => typeof provider.request === "function") ||
-    null
-  );
-}
 
 export function generateSessionKey(mainAccount: string): SessionKeyData {
   const wallet = ethers.Wallet.createRandom();
@@ -425,11 +393,11 @@ export function EvmWalletProvider({ children }: { children: React.ReactNode }) {
       storeProof({
         address: proof.address,
         message: proof.message,
-        signature,
+        signature: proof.signature,
         period: proof.period,
         verifiedAt: Date.now(),
       });
-      return signature;
+      return proof.signature;
     },
     [storeProof]
   );
@@ -443,7 +411,7 @@ export function EvmWalletProvider({ children }: { children: React.ReactNode }) {
       const proof: EvmAddressProof = {
         address: verified.address,
         message: verified.message,
-        signature: signature.trim(),
+        signature: verified.signature,
         period: verified.period,
         verifiedAt: Date.now(),
       };

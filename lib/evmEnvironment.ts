@@ -13,6 +13,9 @@
  * explicitly intercepts them, and the QR flow is useless when the code and the
  * wallet live on the same screen.
  *
+ * What does still work from there is handing the *page* to a wallet that has
+ * its own browser, which is why `handoff` exists. See `lib/metamaskHandoff.ts`.
+ *
  * Detection is only used to reorder and annotate the UI. Connecting is never
  * hard-blocked on it, because user agent sniffing is inherently unreliable and
  * a wrong guess must not leave a user without a working button.
@@ -20,15 +23,28 @@
 
 export type EvmConnectCapability = "injected" | "walletconnect" | "unavailable";
 
+/**
+ * How the user can reach a wallet that will actually sign for them.
+ *
+ * `"metamask-app"` means "no provider here, but this is a phone, so the
+ * MetaMask app may well be installed and can open this page in its own
+ * browser". It is a hint, not a guarantee -- there is no way to detect an
+ * installed app from a web page.
+ */
+export type EvmWalletHandoff = "metamask-app" | "none";
+
 export interface EvmBrowserEnvironment {
   /** False until the first client-side detection runs, so SSR stays stable. */
   ready: boolean;
   isMobile: boolean;
+  isIos: boolean;
+  isAndroid: boolean;
   isInAppBrowser: boolean;
   isWanderInApp: boolean;
   hasInjectedProvider: boolean;
   hasWalletConnectProjectId: boolean;
   capability: EvmConnectCapability;
+  handoff: EvmWalletHandoff;
   /** Short explanation shown to the user when `capability` is "unavailable". */
   unavailableReason: string;
 }
@@ -36,11 +52,14 @@ export interface EvmBrowserEnvironment {
 export const INITIAL_EVM_ENVIRONMENT: EvmBrowserEnvironment = {
   ready: false,
   isMobile: false,
+  isIos: false,
+  isAndroid: false,
   isInAppBrowser: false,
   isWanderInApp: false,
   hasInjectedProvider: false,
   hasWalletConnectProjectId: false,
   capability: "unavailable",
+  handoff: "none",
   unavailableReason: "",
 };
 
@@ -93,25 +112,33 @@ export function detectEvmEnvironment(): EvmBrowserEnvironment {
     capability = "injected";
   } else if (projectIdConfigured && !isInAppBrowser) {
     capability = "walletconnect";
-  } else if (isInAppBrowser) {
-    unavailableReason = isWanderInApp
-      ? "The Wander app's built-in browser is an Arweave wallet, so it does not provide an Ethereum wallet, and mobile in-app browsers are not allowed to hand off to wallet apps."
-      : "This in-app browser does not provide an Ethereum wallet, and mobile in-app browsers are not allowed to hand off to wallet apps.";
-  } else if (!projectIdConfigured) {
+  } else if (isWanderInApp) {
     unavailableReason =
-      "No Ethereum wallet was detected in this browser, and WalletConnect is not configured for this deployment.";
+      "The Wander app's built-in browser is an Arweave wallet, so it has no Ethereum wallet to sign with.";
+  } else if (isInAppBrowser) {
+    unavailableReason =
+      "This in-app browser does not provide an Ethereum wallet.";
+  } else if (isMobile) {
+    unavailableReason =
+      "Mobile browsers do not carry wallet extensions, so there is no Ethereum wallet here.";
   } else {
-    unavailableReason = "No Ethereum wallet was detected in this browser.";
+    unavailableReason =
+      "No Ethereum wallet extension was detected in this browser.";
   }
 
   return {
     ready: true,
     isMobile,
+    isIos,
+    isAndroid,
     isInAppBrowser,
     isWanderInApp,
     hasInjectedProvider,
     hasWalletConnectProjectId: projectIdConfigured,
     capability,
+    // On a phone the wallet is an app rather than an extension, so a page
+    // handoff is worth offering whenever nothing is injected here.
+    handoff: !hasInjectedProvider && isMobile ? "metamask-app" : "none",
     unavailableReason,
   };
 }

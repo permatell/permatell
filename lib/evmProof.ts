@@ -16,16 +16,16 @@ import { getAddress, isAddress, recoverMessageAddress } from "viem";
  *
  *  1. A live provider connection (`eth_requestAccounts`). This is the desktop
  *     path and needs no extra step.
- *  2. An EIP-191 signature over the message below, pasted in by hand. This is
- *     what makes minting possible from a mobile in-app browser that has no EVM
- *     provider: the user signs on a device/browser where their wallet works,
- *     then copies the signature into the in-app browser.
+ *  2. An EIP-191 signature over the message below, carried in from another
+ *     browser. This is what makes minting possible from a mobile in-app
+ *     browser that has no EVM provider: the user signs at `/pomp/sign` inside
+ *     MetaMask's own in-app browser, where a provider does exist, and the
+ *     signature travels back over the system clipboard.
  *
  * For (2) to work across two separate browser sessions, the signed message has
  * to be reproducible on both sides without any shared state, so it is derived
  * purely from the address and a UTC month. The month bucket also expires the
- * proof without needing a server-side nonce. The previous month stays valid so
- * a proof taken minutes before a month boundary does not break.
+ * proof without needing a server-side nonce.
  *
  * Known limitation: because the message has no per-session nonce, a signature
  * that leaks could be replayed by someone else to claim POMPs for that
@@ -35,6 +35,23 @@ import { getAddress, isAddress, recoverMessageAddress } from "viem";
  */
 
 export const EVM_PROOF_VERSION = "1";
+
+/**
+ * How many month buckets back a signature stays valid for.
+ *
+ * This was one month, which meant every mobile user had to redo the whole
+ * cross-app signing trip every few weeks -- sometimes days after doing it,
+ * if they happened to sign near a month boundary. Widening the window trades
+ * a longer replay life for a proof that is taken roughly once a year.
+ *
+ * The trade is deliberately lopsided in favour of usability because the
+ * damage a replayed proof can do is bounded and does not grow with time: it
+ * lets someone mint a POMP for a POAP that address holds, into their own
+ * Arweave wallet. It moves no funds and cannot touch the EVM account. A claim
+ * is permanent whenever it happens, so a shorter window would not undo an
+ * attack, only shift when it could start.
+ */
+const PROOF_VALIDITY_MONTHS = 12;
 
 /**
  * Deliberately a constant rather than `window.location.host`: PermaTell is
@@ -68,15 +85,16 @@ export function currentProofPeriod(now = new Date()): string {
   return periodKey(now);
 }
 
-function previousProofPeriod(now = new Date()): string {
-  const previous = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)
-  );
-  return periodKey(previous);
-}
-
 export function acceptedProofPeriods(now = new Date()): string[] {
-  return [currentProofPeriod(now), previousProofPeriod(now)];
+  const periods: string[] = [];
+  for (let monthsBack = 0; monthsBack < PROOF_VALIDITY_MONTHS; monthsBack += 1) {
+    periods.push(
+      periodKey(
+        new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1))
+      )
+    );
+  }
+  return periods;
 }
 
 export function buildEvmOwnershipMessage(
@@ -102,6 +120,57 @@ export interface VerifiedEvmProof {
   address: string;
   message: string;
   period: string;
+  /** The pasted signature reduced to its canonical `0x…` form. */
+  signature: string;
+}
+
+/**
+ * Pulls a usable 65-byte signature out of whatever the user managed to paste.
+ *
+ * The signature makes its journey between two apps through the system
+ * clipboard, so what arrives is regularly not a bare hex string: mobile
+ * selection handles pick up surrounding label text, wallets and chat apps
+ * insert line breaks into the 132-character run, and "smart" quotes get
+ * wrapped around it. All of that is recoverable, and rejecting it just sends
+ * the user back through the whole cross-app trip for no reason.
+ *
+ * Truncation is the one case that is *not* recoverable, so it is reported
+ * separately -- a half-copied signature is by far the most common mistake and
+ * "that is not a signature" is unhelpful advice when the real problem is that
+ * the user needs to select all of it.
+ */
+export function normalizeEvmSignature(raw: string): string {
+  const compact = (raw || "").replace(/\s+/g, "");
+  if (!compact) {
+    throw new Error("Paste the signature your wallet produced.");
+  }
+
+  const full = compact.match(/(?:0x)?([0-9a-fA-F]{130})(?![0-9a-fA-F])/);
+  if (!full) {
+    const longestRun = (compact.match(/[0-9a-fA-F]{8,}/g) || []).reduce(
+      (longest, run) => (run.length > longest.length ? run : longest),
+      ""
+    );
+    if (longestRun && longestRun.length < 130) {
+      throw new Error(
+        `That signature is incomplete — it has ${longestRun.length} of the 130 characters. Go back and use the Copy signature button so the whole value is selected.`
+      );
+    }
+    throw new Error(
+      "That does not look like a wallet signature. Paste the full 0x… value your wallet produced."
+    );
+  }
+
+  const body = full[1].toLowerCase();
+  // Some wallets report the recovery id as 0/1 rather than 27/28. viem only
+  // accepts the latter, so normalise it rather than failing a valid proof.
+  const recoveryId = parseInt(body.slice(128), 16);
+  const normalizedRecoveryId =
+    recoveryId === 0 || recoveryId === 1 ? recoveryId + 27 : recoveryId;
+
+  return `0x${body.slice(0, 128)}${normalizedRecoveryId
+    .toString(16)
+    .padStart(2, "0")}`;
 }
 
 /**
@@ -120,12 +189,7 @@ export async function verifyEvmOwnershipSignature(input: {
   }
   const address = getAddress(rawAddress);
 
-  const signature = input.signature.trim();
-  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) {
-    throw new Error(
-      "That does not look like a wallet signature. Paste the full 0x… value your wallet produced."
-    );
-  }
+  const signature = normalizeEvmSignature(input.signature);
 
   for (const period of acceptedProofPeriods(input.now)) {
     const message = buildEvmOwnershipMessage(address, period);
@@ -139,12 +203,12 @@ export async function verifyEvmOwnershipSignature(input: {
       continue;
     }
     if (recovered.toLowerCase() === address.toLowerCase()) {
-      return { address, message, period };
+      return { address, message, period, signature };
     }
   }
 
   throw new Error(
-    "That signature does not match this address. Make sure you signed with the same wallet, and that the proof is less than a month old."
+    "That signature does not match this address. Make sure you signed with the same wallet you are claiming for, and that the proof was made in the last year."
   );
 }
 
