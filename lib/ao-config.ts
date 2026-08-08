@@ -416,8 +416,8 @@ export function getMainnetAO(signer?: unknown) {
     const config: Record<string, unknown> = {
       MODE: "mainnet",
       URL: url,
-      // Informational for aoconnect; browser fetch wrapper also rewrites
-      // ~process@1.0/push → ~relay@1.0/push when this is relay@1.0.
+      // Informational only: aoconnect mainnet message() still hardcodes
+      // /{id}~process@1.0/push. app-1 serves that path; ~relay@1.0/* 404s.
       // Signing stays ANS-104 DataItem (Wander), not RFC-9421 HTTP-sig.
       device: MAINNET_DEVICE,
       SCHEDULER: scheduler,

@@ -4,9 +4,11 @@ import {
   DEFAULT_HYPERBEAM_WRITE_URL,
   getHyperbeamWriteUrl,
   isHungPortalWriteUrl,
-  MAINNET_DEVICE,
   normalizeHyperbeamUrl,
 } from "@/lib/ao-config";
+
+/** Hard cap on distinct push URLs per aoconnect message(). */
+const MAX_PUSH_ATTEMPTS = 2;
 
 function getUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
@@ -65,6 +67,38 @@ function dedupe(values: string[]): string[] {
   return out;
 }
 
+function pathnameOf(url: string): string {
+  try {
+    return new URL(url, window.location.href).pathname.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function isRelayPath(url: string): boolean {
+  return pathnameOf(url).includes("~relay@1.0/");
+}
+
+function isSchedulePath(url: string): boolean {
+  return pathnameOf(url).endsWith("/schedule");
+}
+
+function hyperbeamDebugEnabled(): boolean {
+  try {
+    if (process.env.NEXT_PUBLIC_HYPERBEAM_DEBUG === "1") return true;
+    return (
+      typeof window !== "undefined" &&
+      window.localStorage?.getItem("hyperbeamDebug") === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function debugLog(...args: unknown[]): void {
+  if (hyperbeamDebugEnabled()) console.debug("[hyperbeam]", ...args);
+}
+
 /**
  * Write nodes for HyperBEAM POST /push. Never include hung Portal
  * (hb.portalinto.com). Prefer the resolved write URL, then explicit env,
@@ -88,56 +122,36 @@ function rewriteHost(url: string, nodeBase: string): string {
   return `${node.origin}${parsed.pathname}${parsed.search}`;
 }
 
-function rewritePushToSchedule(url: string): string {
+/**
+ * Normalize aoconnect (or mistaken) paths onto the write node.
+ * app-1.forward.computer serves `/{id}~process@1.0/push` (400 on bad body)
+ * and hard-404s `~relay@1.0/*` including `/schedule`. Never emit those.
+ */
+function toProcessPushUrl(url: string): string {
   const parsed = new URL(url, window.location.href);
-  parsed.pathname = parsed.pathname.replace(/\/push$/, "/schedule");
+  parsed.pathname = parsed.pathname
+    .replace(/~relay@1\.0\//g, "~process@1.0/")
+    .replace(/\/schedule\/?$/, "/push");
   parsed.searchParams.delete("async");
   parsed.searchParams.delete("max-depth");
   return parsed.toString();
 }
 
-function rewriteProcessToRelay(url: string): string | null {
-  try {
-    const parsed = new URL(url, window.location.href);
-    if (!parsed.pathname.includes("~process@1.0/")) return null;
-    parsed.pathname = parsed.pathname.replace(
-      /~process@1\.0\//g,
-      "~relay@1.0/"
-    );
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
 /**
- * aoconnect mainnet `message()` hardcodes `/{id}~process@1.0/push` and
- * ignores `connect({ device })`. Prefer relay@1.0 for Wander ANS-104
- * DataItems; keep the original process@1.0 path as a same-node fallback.
- * Spawn `/push` (no process id) is unchanged.
+ * aoconnect mainnet `message()` hardcodes `/{id}~process@1.0/push`.
+ * Host-rewrite to the write node, keep process@1.0/push first, optionally one
+ * `?async=true` retry. Cap at MAX_PUSH_ATTEMPTS. Spawn `/push` unchanged.
  */
-function deviceVariants(url: string): string[] {
-  if (MAINNET_DEVICE !== "relay@1.0") return [url];
-  const relayUrl = rewriteProcessToRelay(url);
-  return relayUrl ? [relayUrl, url] : [url];
-}
-
 function buildAttemptUrls(url: string): string[] {
-  const nodes = getWriteNodeUrls();
-  const urls: string[] = [];
-  for (const node of nodes) {
-    for (const hostUrl of deviceVariants(rewriteHost(url, node))) {
-      urls.push(withQueryParam(hostUrl, "async", "true"));
-      urls.push(hostUrl);
-      urls.push(rewritePushToSchedule(hostUrl));
-    }
+  const node = getWriteNodeUrls()[0];
+  if (!node) return [];
+
+  const hostUrl = toProcessPushUrl(rewriteHost(url, node));
+  const urls = [hostUrl];
+  if (pathnameOf(hostUrl).endsWith("/push")) {
+    urls.push(withQueryParam(hostUrl, "async", "true"));
   }
-  const seen = new Set<string>();
-  return urls.filter((attemptUrl) => {
-    if (seen.has(attemptUrl)) return false;
-    seen.add(attemptUrl);
-    return true;
-  });
+  return dedupe(urls).slice(0, MAX_PUSH_ATTEMPTS);
 }
 
 function createAttemptRequest(
@@ -191,7 +205,7 @@ function isRetryableResponse(response: Response): boolean {
 
 async function responseBody(response: Response): Promise<string> {
   try {
-    return (await response.clone().text()).slice(0, 1_000);
+    return (await response.clone().text()).slice(0, 240);
   } catch {
     return "";
   }
@@ -209,39 +223,72 @@ export function createHyperbeamFetch(fetchImpl: typeof fetch = fetch): typeof fe
     if (!isPushRequest(url, baseRequest.method)) {
       const res = await fetchImpl(baseRequest);
       if (!res.ok) {
-        console.warn("[hyperbeam] request failed", {
+        debugLog("request failed", {
           url,
           method: baseRequest.method,
           status: res.status,
-          body: await responseBody(res),
         });
       }
       return res;
     }
 
+    const attempts = buildAttemptUrls(url);
     let lastResponse: Response | null = null;
     let lastError: unknown = null;
-    for (const attemptUrl of buildAttemptUrls(url)) {
+    let skipRelay = false;
+    let skipSchedule = false;
+
+    for (const attemptUrl of attempts) {
+      if (skipRelay && isRelayPath(attemptUrl)) continue;
+      if (skipSchedule && isSchedulePath(attemptUrl)) continue;
+
       try {
         const res = await fetchWithTimeout(fetchImpl, attemptUrl, baseRequest);
-        if (!isRetryableResponse(res)) return res;
+        if (!isRetryableResponse(res)) {
+          debugLog("push ok", { url: attemptUrl, status: res.status });
+          return res;
+        }
+
         lastResponse = res;
-        console.warn("[hyperbeam] push attempt failed", {
+        // Hard 404 on relay/schedule: never retry sibling async/schedule variants.
+        if (res.status === 404 && isRelayPath(attemptUrl)) {
+          skipRelay = true;
+          debugLog("skipping remaining relay@1.0 paths after 404", attemptUrl);
+          continue;
+        }
+        if (res.status === 404 && isSchedulePath(attemptUrl)) {
+          skipSchedule = true;
+          debugLog("skipping remaining /schedule paths after 404", attemptUrl);
+          continue;
+        }
+        debugLog("push attempt failed", {
           url: attemptUrl,
           status: res.status,
-          body: await responseBody(res),
         });
       } catch (error) {
         lastError = error;
-        console.warn("[hyperbeam] push attempt errored", {
+        debugLog("push attempt errored", {
           url: attemptUrl,
           error: String((error as { message?: string })?.message || error),
         });
       }
     }
 
+    const summary = {
+      tried: attempts.length,
+      lastUrl: attempts[attempts.length - 1] || url,
+      status: lastResponse?.status,
+      body: lastResponse ? await responseBody(lastResponse) : undefined,
+      error: lastError
+        ? String((lastError as { message?: string })?.message || lastError)
+        : undefined,
+    };
+    console.warn("[hyperbeam] push failed", summary);
+
     if (lastResponse) return lastResponse;
-    throw lastError instanceof Error ? lastError : new Error("HyperBEAM push failed");
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("HyperBEAM push failed");
   }) as typeof fetch;
 }
 

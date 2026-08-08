@@ -11,10 +11,11 @@ and authority must belong to the same node/operator setup.
    `NEXT_PUBLIC_MAINNET_STORYPOINTS_PROCESS_ID`.
 2. **Browser writes** — Wander/Beacon `createDataItemSigner` via
    `connect({ MODE: "mainnet", URL, SCHEDULER, signer })`. Story body goes in
-   message `Data` (not tags). Device default: `relay@1.0`. aoconnect still
-   hardcodes `/{id}~process@1.0/push`; the browser fetch wrapper rewrites that
-   to `~relay@1.0/push` on the write node and **never** retries hung Portal
-   `/push`.
+   message `Data` (not tags). aoconnect hardcodes `/{id}~process@1.0/push`; on
+   `app-1.forward.computer` that path is the working write endpoint.
+   `~relay@1.0/push` and `~relay@1.0/schedule` hard-404 there — the browser
+   fetch wrapper keeps process@1.0/push (at most 2 URL attempts), skips hung
+   Portal `/push`, and does not spray relay/schedule fallbacks.
 3. **Browser reads** — Discovery lists mainnet per-story processes from a
    hard-coded seed (POMP Story `hJ7Intf…`), localStorage, and Arweave GraphQL
    (`App-Name=PermaTell` + `PermaTell-Asset-Type=story-process`, with
@@ -35,7 +36,8 @@ Never commit JWKs or `.env.local`.
 Portal (`hb.portalinto.com`) is reachable for `GET /~meta@1.0/info`, but Node
 `POST /push` spawn currently hangs there. Use Portal's scheduler/authority with
 `https://app-1.forward.computer` for spawn/hydrate (and browser writes after
-spawn). Browser wallets still use `relay@1.0` + DataItem signer.
+spawn). Browser wallets use ANS-104 DataItem signing against
+`~process@1.0/push` on that write node.
 
 ```env
 NEXT_PUBLIC_AO_MODE=mainnet
