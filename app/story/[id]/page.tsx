@@ -52,8 +52,6 @@ const StoryPage = () => {
   const [isUpvoting, setIsUpvoting] = useState(false);
   const router = useRouter();
 
-  console.log(currentStory);
-
   useEffect(() => {
     const storyId = params?.id;
     if (storyId) {
@@ -66,6 +64,14 @@ const StoryPage = () => {
       setIsInitialLoading(true);
       const fetchedStory = await getStory({ story_id: storyId });
       if (fetchedStory) {
+        if (process.env.NODE_ENV === "development") {
+          console.info("[story] loaded", {
+            id: fetchedStory.id,
+            current_version: fetchedStory.current_version,
+            versions: Object.keys(fetchedStory.versions || {}),
+            votes: fetchedStory.versions?.[fetchedStory.current_version]?.votes,
+          });
+        }
         setCurrentStory(fetchedStory);
         const currentVersion =
           fetchedStory.versions[fetchedStory.current_version];
@@ -105,12 +111,11 @@ const StoryPage = () => {
         category: editedCategory ?? "Uncategorized",
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
       setIsRefreshing(true);
       await fetchStory(currentStory.id);
 
       setIsEditing(false);
+      toast.success("Story version saved");
     } catch (error) {
       console.error("Error updating story:", error);
       toast.error(
@@ -129,8 +134,8 @@ const StoryPage = () => {
         story_id: currentStory.id,
         version_id: versionId.toString(),
       });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
       await fetchStory(currentStory.id);
+      toast.success(`Reverted to version ${versionId}`);
     } catch (error) {
       console.error("Error reverting story:", error);
       toast.error(
@@ -166,6 +171,7 @@ const StoryPage = () => {
         version_id: currentStory.current_version,
       });
       await fetchStory(currentStory.id);
+      toast.success("Upvoted");
     } catch (error) {
       console.error("Error upvoting story:", error);
       toast.error(error instanceof Error ? error.message : "Failed to upvote");

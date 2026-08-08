@@ -27,9 +27,11 @@ import {
   isValidCurrentStory,
   hydrateMainnetDiscoveryStories,
   indexMainnetDiscoveryStories,
+  preferFresherStory,
   readStoredMainnetCurrentStories,
   readStoredMainnetStory,
   spawnMainnetStoryProcess,
+  waitForHyperbeamStory,
 } from "@/lib/mainnetStories";
 
 export interface CreateStoryResult {
@@ -309,8 +311,32 @@ export const StoriesProcessProvider: React.FC<{
           author: address || undefined,
         });
         if (updated) setCurrentStory(updated);
-        const remote = await fetchHyperbeamStory(payload.story_id);
-        if (remote) setCurrentStory(remote);
+        const minVersions = Object.keys(updated?.versions || {}).length || 2;
+        const minCurrent = Number(updated?.current_version) || minVersions;
+        const remote = await waitForHyperbeamStory(payload.story_id, {
+          minVersions,
+          minCurrentVersion: minCurrent,
+        });
+        const confirmed = preferFresherStory(updated, remote);
+        if (confirmed) {
+          setCurrentStory(confirmed);
+          console.info("[stories] CreateStoryVersion confirmed", {
+            id: confirmed.id,
+            current_version: confirmed.current_version,
+            versions: Object.keys(confirmed.versions),
+            source:
+              confirmed === remote
+                ? "hyperbeam"
+                : remote
+                  ? "local+hyperbeam"
+                  : "local",
+          });
+        } else {
+          console.warn(
+            "[stories] CreateStoryVersion sent but HyperBEAM /now did not confirm yet; keeping local version",
+            { story_id: payload.story_id, local: updated?.current_version }
+          );
+        }
         await getStories();
         return;
       }
@@ -361,7 +387,9 @@ export const StoriesProcessProvider: React.FC<{
           undefined,
           payload.story_id
         );
-        const remote = await fetchHyperbeamStory(payload.story_id);
+        const remote = await waitForHyperbeamStory(payload.story_id, {
+          minCurrentVersion: Number(payload.version_id) || 1,
+        });
         if (remote) setCurrentStory(remote);
         await getStories();
         return;
@@ -445,7 +473,9 @@ export const StoriesProcessProvider: React.FC<{
       if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
         try {
           const remote = await fetchHyperbeamStory(payload.story_id);
-          if (remote) return remote;
+          const local = readStoredMainnetStory(payload.story_id);
+          const best = preferFresherStory(local, remote);
+          if (best) return best;
         } catch (error) {
           console.warn("[stories] HyperBEAM story read failed", error);
         }
@@ -488,8 +518,33 @@ export const StoriesProcessProvider: React.FC<{
         );
         const updated = applyLocalStoryUpvote(payload.story_id, payload.version_id);
         if (updated) setCurrentStory(updated);
-        const remote = await fetchHyperbeamStory(payload.story_id);
-        if (remote) setCurrentStory(remote);
+        const minVotes = Object.values(updated?.versions || {}).reduce(
+          (sum, version) => sum + (Number(version?.votes) || 0),
+          0
+        );
+        const remote = await waitForHyperbeamStory(payload.story_id, {
+          minVotes: Math.max(1, minVotes),
+        });
+        const confirmed = preferFresherStory(updated, remote);
+        if (confirmed) {
+          setCurrentStory(confirmed);
+          console.info("[stories] UpvoteStoryVersion confirmed", {
+            id: confirmed.id,
+            version_id: payload.version_id,
+            votes: confirmed.versions[payload.version_id]?.votes,
+            source:
+              confirmed === remote
+                ? "hyperbeam"
+                : remote
+                  ? "local+hyperbeam"
+                  : "local",
+          });
+        } else {
+          console.warn(
+            "[stories] UpvoteStoryVersion sent but HyperBEAM /now did not confirm yet; keeping local votes",
+            { story_id: payload.story_id, version_id: payload.version_id }
+          );
+        }
         await getStories();
         return;
       }

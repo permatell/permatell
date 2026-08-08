@@ -24,8 +24,8 @@ and authority must belong to the same node/operator setup.
    Registry GetStories is still merged when a wallet is present, but create no
    longer depends on `r-tsuNh…` because spawned story processes are not stored
    there. Existing per-story ids still receive edit/upvote on that process. The
-   first edit/upvote also Eval-repairs handlers so older spawns (e.g. POMP Story)
-   can still version.
+   first edit/upvote also Eval-repairs handlers (story-json-v1) so older spawns
+   (e.g. POMP Story) persist versions via `story_json` under patch@1.0.
 4. **Legacy toggle** — remains available unless `NEXT_PUBLIC_AO_LOCK_NETWORK=true`.
 
 Never commit JWKs or `.env.local`.
@@ -154,5 +154,10 @@ AO client path supports it, use:
 NEXT_PUBLIC_AO_MAINNET_SCHEDULER_DEVICE=arweave-scheduler@1.0
 ```
 
-Story state is also published with `patch@1.0` from per-story Lua processes so
-it can be exposed through HyperBEAM HTTP state paths instead of old dry-run reads.
+Story state is published with `patch@1.0` from per-story Lua. Nested
+`versions["N"]` linked maps are unreliable under HyperBEAM shallow merge
+(scalars like `current_version` update, but new version keys / votes often
+do not). Handlers therefore also patch a full `story_json` blob (same idea
+as POMP campaign `json.encode`), and the browser reads that first via
+`/{id}~process@1.0/now/story_json` before falling back to
+`/now/story/versions/{n}`.
