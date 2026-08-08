@@ -228,7 +228,8 @@ Handlers.add("create_story_version",
       author = msg.From,
       timestamp = os.time(),
       category = msg_value(msg, "category") or current_version.category,
-      votes = 0
+      votes = 0,
+      voters = {}
     }
     publish_story_state()
     ao.send({ Target = msg.From, Data = "Story updated with new version: " .. new_version_id })
@@ -260,12 +261,22 @@ Handlers.add("upvote_story_version",
   { Action = "UpvoteStoryVersion" },
   function(msg)
     local version_id = msg_value(msg, "version_id")
-    local _, version = resolve_version(version_id)
-    if version_id and version then
+    local resolved_id, version = resolve_version(version_id)
+    if resolved_id and version then
+      if type(version.voters) ~= "table" then
+        version.voters = {}
+      end
+      if msg.From and version.voters[msg.From] then
+        ao.send({ Target = msg.From, Data = "Already upvoted this version" })
+        return
+      end
+      if msg.From and msg.From ~= "" then
+        version.voters[msg.From] = true
+      end
       version.votes = (tonumber(version.votes) or 0) + 1
-      Story.versions[version_id] = version
+      Story.versions[resolved_id] = version
       publish_story_state()
-      ao.send({ Target = msg.From, Data = "Upvote successful for story " .. ao.id .. ", version " .. version_id })
+      ao.send({ Target = msg.From, Data = "Upvote successful for story " .. ao.id .. ", version " .. resolved_id })
     else
       ao.send({ Target = msg.From, Data = "Story version not found!" })
     end
@@ -297,12 +308,21 @@ Story = {
       author = ${luaString(input.creator)},
       timestamp = ${timestamp},
       category = ${luaString(category)},
-      votes = 0
+      votes = 0,
+      voters = {}
     }
   }
 }
 ${STORY_HANDLER_LUA}
 `;
+}
+
+function votersToLua(voters?: Record<string, boolean>): string {
+  const entries = Object.entries(voters || {})
+    .filter(([, voted]) => Boolean(voted))
+    .map(([wallet]) => `      [${luaString(wallet)}] = true`);
+  if (!entries.length) return "{}";
+  return `{\n${entries.join(",\n")}\n    }`;
 }
 
 function buildStoryTableLua(story: Story): string {
@@ -317,7 +337,8 @@ function buildStoryTableLua(story: Story): string {
       author = ${luaString(version.author || "")},
       timestamp = ${Number.isFinite(timestamp) ? timestamp : nowSeconds()},
       category = ${luaString(version.category || "Uncategorized")},
-      votes = ${Number(version.votes) || 0}
+      votes = ${Number(version.votes) || 0},
+      voters = ${votersToLua(version.voters)}
     }`;
     })
     .join(",\n");
@@ -448,11 +469,32 @@ function versionIdsFromLinks(data: Record<string, unknown> | null | undefined): 
   return [...ids];
 }
 
+function parseVoters(raw: unknown): Record<string, boolean> | undefined {
+  if (!raw) return undefined;
+  const out: Record<string, boolean> = {};
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      const wallet = clean(typeof entry === "string" ? entry : "");
+      if (wallet) out[wallet] = true;
+    }
+  } else if (typeof raw === "object") {
+    for (const [wallet, value] of Object.entries(raw as Record<string, unknown>)) {
+      const key = clean(wallet);
+      if (!key) continue;
+      if (value === true || value === 1 || value === "true" || value == null) {
+        out[key] = true;
+      }
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function parseStoryVersion(raw: any, fallbackId: string): Story["versions"][string] | null {
   if (!raw || raw.body === "not_found" || Number(raw.status) === 404) return null;
   const title = clean(raw.title);
   const content = typeof raw.content === "string" ? raw.content : "";
   if (!title && !content && raw.id == null) return null;
+  const voters = parseVoters(raw.voters);
   return {
     id: Number(raw.id ?? fallbackId) || Number(fallbackId) || 0,
     title,
@@ -462,6 +504,7 @@ function parseStoryVersion(raw: any, fallbackId: string): Story["versions"][stri
     timestamp: String(raw.timestamp ?? ""),
     category: (clean(raw.category) || "Uncategorized") as StoryCategory,
     votes: Number(raw.votes || 0),
+    ...(voters ? { voters } : {}),
   };
 }
 
@@ -723,7 +766,7 @@ export async function waitForHyperbeamStory(
   return latest || readStoredMainnetStory(processId);
 }
 
-const HANDLER_REPAIR_VERSION = "story-json-v1";
+const HANDLER_REPAIR_VERSION = "story-voters-v1";
 
 export async function evalPerStoryHandlers(processId: string): Promise<void> {
   const repairKey = `${processId}:${HANDLER_REPAIR_VERSION}`;
@@ -1104,6 +1147,7 @@ export function applyLocalStoryVersion(
         timestamp: String(nowSeconds()),
         category: (input.category || current.category || "Uncategorized") as StoryCategory,
         votes: 0,
+        voters: {},
       },
     },
   };
@@ -1111,13 +1155,30 @@ export function applyLocalStoryVersion(
   return updated;
 }
 
+export function walletHasUpvotedVersion(
+  story: Story | null | undefined,
+  versionId: string,
+  wallet: string
+): boolean {
+  if (!story || !wallet || !versionId) return false;
+  const version = story.versions?.[versionId];
+  if (!version?.voters) return false;
+  return Boolean(version.voters[wallet]);
+}
+
 export function applyLocalStoryUpvote(
   storyId: string,
-  versionId: string
+  versionId: string,
+  voter?: string
 ): Story | null {
   const existing = readStoredMainnetStory(storyId);
   if (!existing?.versions[versionId]) return null;
   const version = existing.versions[versionId];
+  const voters = { ...(version.voters || {}) };
+  if (voter) {
+    if (voters[voter]) return null;
+    voters[voter] = true;
+  }
   const updated: Story = {
     ...existing,
     versions: {
@@ -1125,6 +1186,7 @@ export function applyLocalStoryUpvote(
       [versionId]: {
         ...version,
         votes: (Number(version.votes) || 0) + 1,
+        voters,
       },
     },
   };

@@ -1,9 +1,8 @@
 "use client";
 import React, { useState, useEffect, useMemo } from "react";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
-import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
-import { FaUser, FaStar } from "react-icons/fa";
+import { FaStar } from "react-icons/fa";
 import { Spinner } from "@/components/ui/spinner";
 import { motion } from "framer-motion";
 import { PageHeader } from "@/components/ui/page-header";
@@ -14,6 +13,7 @@ import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { AuthorAvatar } from "@/components/ui/author-avatar";
 import { ArnsName } from "@/components/ui/arns-name";
+import { useNetworkMode } from "@/contexts/NetworkModeContext";
 import {
   fetchDiscoverPomps,
   fetchPompCampaignInfo,
@@ -21,10 +21,30 @@ import {
   type PompClaimedAsset,
 } from "@/lib/pomp";
 
+/** Score authors from the Discovery story set: +10 per story, +1 per vote. */
+function aggregateAuthorScoresFromStories(
+  stories: Array<{
+    version_data?: { author?: string; votes?: number };
+    author?: string;
+  }>
+): Record<string, number> {
+  const scores: Record<string, number> = {};
+  for (const story of stories) {
+    const author =
+      story.version_data?.author ||
+      (typeof story.author === "string" ? story.author : "");
+    if (!author) continue;
+    const votes = Number(story.version_data?.votes) || 0;
+    scores[author] = (scores[author] || 0) + 10 + votes;
+  }
+  return scores;
+}
+
 const AuthorBoard: React.FC = () => {
   const { getAllStoryPoints, allUsersStoryPoints, loading } =
     useStoryPointsProcess();
   const { stories, getStories, loading: storiesLoading } = useStoriesProcess();
+  const { networkMode } = useNetworkMode();
   const [searchTerm, setSearchTerm] = useState("");
   const [sortedAuthors, setSortedAuthors] = useState<[string, number][]>([]);
   const [authorStories, setAuthorStories] = useState<Record<string, any[]>>({});
@@ -37,9 +57,11 @@ const AuthorBoard: React.FC = () => {
   const { address } = useWallet();
 
   useEffect(() => {
-    getAllStoryPoints();
+    if (networkMode !== "mainnet") {
+      getAllStoryPoints();
+    }
     getStories();
-  }, []);
+  }, [networkMode]);
 
   useEffect(() => {
     setLoadingPomps(true);
@@ -85,13 +107,19 @@ const AuthorBoard: React.FC = () => {
   }, [stories]);
 
   useEffect(() => {
-    const sorted = Object.entries(allUsersStoryPoints)
+    // Mainnet ranks Discovery authors (same story set as dashboard).
+    // Legacy keeps Story Points process rankings.
+    const points =
+      networkMode === "mainnet"
+        ? aggregateAuthorScoresFromStories(stories)
+        : allUsersStoryPoints;
+    const sorted = Object.entries(points)
       .sort(([, a], [, b]) => b - a)
-      .filter(([address]) =>
-        address.toLowerCase().includes(searchTerm.toLowerCase())
+      .filter(([addr]) =>
+        addr.toLowerCase().includes(searchTerm.toLowerCase())
       );
     setSortedAuthors(sorted);
-  }, [allUsersStoryPoints, searchTerm]);
+  }, [allUsersStoryPoints, searchTerm, stories, networkMode]);
 
   const getPointColor = (index: number) => {
     switch (index) {
@@ -122,6 +150,9 @@ const AuthorBoard: React.FC = () => {
     [pompCampaignStats, pomps]
   );
 
+  const authorBoardLoading =
+    storiesLoading || (networkMode !== "mainnet" && loading);
+
   return (
     <div className="container mx-auto px-4 py-8">
       <PageHeader title="Author Leaderboard" />
@@ -134,7 +165,7 @@ const AuthorBoard: React.FC = () => {
         className="mb-6 bg-black/40 backdrop-blur-md border-gray-800 focus:ring-purple-500 text-gray-400 placeholder:text-gray-400 focus:text-white"
       />
 
-      {loading || storiesLoading ? (
+      {authorBoardLoading ? (
         <div className="flex justify-center items-center min-h-[200px]">
           <Spinner className="text-purple-500 w-8 h-8" />
         </div>
@@ -164,7 +195,17 @@ const AuthorBoard: React.FC = () => {
                       <p className="font-medium text-white/90">
                         <ArnsName address={authorAddress || null} showAddress={true} />
                       </p>
-                      <p className="text-sm text-gray-500">{points} points</p>
+                      <p className="text-sm text-gray-500">
+                        {points} points
+                        {networkMode === "mainnet" &&
+                        authorStories[authorAddress]?.length
+                          ? ` · ${authorStories[authorAddress].length} stor${
+                              authorStories[authorAddress].length === 1
+                                ? "y"
+                                : "ies"
+                            }`
+                          : ""}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-1">

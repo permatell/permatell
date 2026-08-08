@@ -48,13 +48,23 @@ local function send_story_points(address, points)
   })
 end
 
-local function increment_version_votes(story_id, version_id)
+local function increment_version_votes(story_id, version_id, voter)
   local story = stories[story_id]
   if story and story.versions[version_id] then
-    story.versions[version_id].votes = (story.versions[version_id].votes or 0) + 1
+    local version = story.versions[version_id]
+    if type(version.voters) ~= "table" then
+      version.voters = {}
+    end
+    if voter and version.voters[voter] then
+      return false, "already"
+    end
+    if voter and voter ~= "" then
+      version.voters[voter] = true
+    end
+    version.votes = (version.votes or 0) + 1
     return true
   end
-  return false
+  return false, "not_found"
 end
 
 -- Optional: wire story-points after spawn if not baked into source.
@@ -89,7 +99,8 @@ Handlers.add("create_story",
           author = msg.From,
           timestamp = os.time(),
           category = msg.category or "",
-          votes = 0
+          votes = 0,
+          voters = {}
         }
       }
     }
@@ -121,7 +132,8 @@ Handlers.add("create_story_version",
         author = msg.From,
         timestamp = tostring(os.time()),
         category = msg.category or current_version.category,
-        votes = 0
+        votes = 0,
+        voters = {}
       }
 
       send_story_points(msg.From, 5)
@@ -191,9 +203,12 @@ Handlers.add("get_story",
 Handlers.add("upvote_story_version",
   { Action = "UpvoteStoryVersion" },
   function(msg)
-    if increment_version_votes(msg.story_id, msg.version_id) then
+    local ok, reason = increment_version_votes(msg.story_id, msg.version_id, msg.From)
+    if ok then
       send_story_points(msg.From, 1)
       ao.send({ Target = msg.From, Data = "Upvote successful for story " .. msg.story_id .. ", version " .. msg.version_id })
+    elseif reason == "already" then
+      ao.send({ Target = msg.From, Data = "Already upvoted this version" })
     else
       ao.send({ Target = msg.From, Data = "Story or version not found!" })
     end

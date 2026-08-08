@@ -159,22 +159,31 @@ const StoryPage = () => {
   const currentVersion = currentStory
     ? currentStory.versions[currentStory.current_version]
     : null;
+  const hasUpvotedCurrent =
+    Boolean(author) && Boolean(currentVersion?.voters?.[author || ""]);
 
   const handleUpvote = async () => {
     if (!author || !currentStory) {
+      return;
+    }
+    const versionId = currentStory.current_version;
+    if (currentVersion?.voters?.[author]) {
+      toast.error("Already upvoted this version");
       return;
     }
     setIsUpvoting(true);
     try {
       await upvoteStoryVersion({
         story_id: currentStory.id,
-        version_id: currentStory.current_version,
+        version_id: versionId,
       });
       await fetchStory(currentStory.id);
       toast.success("Upvoted");
     } catch (error) {
       console.error("Error upvoting story:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to upvote");
+      const message =
+        error instanceof Error ? error.message : "Failed to upvote";
+      toast.error(message);
     } finally {
       setIsUpvoting(false);
     }
@@ -348,7 +357,7 @@ const StoryPage = () => {
                     </Button>
                     <Button
                       onClick={handleUpvote}
-                      disabled={!author || isUpvoting}
+                      disabled={!author || isUpvoting || hasUpvotedCurrent}
                       variant="outline"
                       className="flex items-center justify-center bg-black/60 hover:bg-black/80 hover:text-gray-100 text-gray-300"
                     >
@@ -356,7 +365,15 @@ const StoryPage = () => {
                         size={16}
                         className="text-yellow-500 mr-1"
                       />
-                      <span>{isUpvoting ? "Upvoting..." : "Upvote"}</span>
+                      <span>
+                        {!author
+                          ? "Connect to Upvote"
+                          : isUpvoting
+                            ? "Upvoting..."
+                            : hasUpvotedCurrent
+                              ? "Upvoted"
+                              : "Upvote"}
+                      </span>
                     </Button>
                   </div>
                 )}

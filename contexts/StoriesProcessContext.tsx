@@ -32,6 +32,7 @@ import {
   readStoredMainnetStory,
   spawnMainnetStoryProcess,
   waitForHyperbeamStory,
+  walletHasUpvotedVersion,
 } from "@/lib/mainnetStories";
 
 export interface CreateStoryResult {
@@ -507,6 +508,17 @@ export const StoriesProcessProvider: React.FC<{
     setLoading(true);
     try {
       if (useMainnetPerStoryProcesses || isPerStoryProcessId(payload.story_id)) {
+        const localStory =
+          preferFresherStory(
+            currentStory?.id === payload.story_id ? currentStory : null,
+            readStoredMainnetStory(payload.story_id)
+          ) || readStoredMainnetStory(payload.story_id);
+        if (
+          address &&
+          walletHasUpvotedVersion(localStory, payload.version_id, address)
+        ) {
+          throw new Error("Already upvoted this version");
+        }
         await evalPerStoryHandlers(payload.story_id);
         await sendMessage(
           [
@@ -516,12 +528,26 @@ export const StoriesProcessProvider: React.FC<{
           undefined,
           payload.story_id
         );
-        const updated = applyLocalStoryUpvote(payload.story_id, payload.version_id);
-        if (updated) setCurrentStory(updated);
-        const minVotes = Object.values(updated?.versions || {}).reduce(
-          (sum, version) => sum + (Number(version?.votes) || 0),
-          0
+        const updated = applyLocalStoryUpvote(
+          payload.story_id,
+          payload.version_id,
+          address || undefined
         );
+        if (updated) {
+          setCurrentStory(updated);
+        } else if (
+          address &&
+          walletHasUpvotedVersion(
+            readStoredMainnetStory(payload.story_id),
+            payload.version_id,
+            address
+          )
+        ) {
+          throw new Error("Already upvoted this version");
+        }
+        const minVotes = Object.values(
+          (updated || readStoredMainnetStory(payload.story_id))?.versions || {}
+        ).reduce((sum, version) => sum + (Number(version?.votes) || 0), 0);
         const remote = await waitForHyperbeamStory(payload.story_id, {
           minVotes: Math.max(1, minVotes),
         });
@@ -547,6 +573,14 @@ export const StoriesProcessProvider: React.FC<{
         }
         await getStories();
         return;
+      }
+
+      if (
+        address &&
+        currentStory?.id === payload.story_id &&
+        walletHasUpvotedVersion(currentStory, payload.version_id, address)
+      ) {
+        throw new Error("Already upvoted this version");
       }
 
       await sendMessage([

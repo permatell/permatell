@@ -9,4 +9,6 @@ export interface StoryVersion {
   timestamp: string;
   category: StoryCategory;
   votes: number;
+  /** Wallet addresses that have upvoted this version (one vote per wallet). */
+  voters?: Record<string, boolean>;
 }
