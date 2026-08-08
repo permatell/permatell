@@ -10,6 +10,7 @@ import { useStoriesProcess } from "@/contexts/StoriesProcessContext";
 import { IoBookOutline } from "react-icons/io5";
 import { IoMdArrowDropdown, IoMdArrowDropup } from "react-icons/io";
 import Link from "next/link";
+import Image from "next/image";
 import { useWallet } from "@/contexts/WalletContext";
 import { AuthorAvatar } from "@/components/ui/author-avatar";
 import { ArnsName } from "@/components/ui/arns-name";
@@ -268,9 +269,18 @@ const AuthorBoard: React.FC = () => {
 
       <div className="mt-10 border-t border-gray-800/60 pt-8">
         <div className="mb-5">
-          <h2 className="text-2xl font-semibold text-white/90">
-            POMP Leaderboard
-          </h2>
+          <div className="flex items-center gap-3">
+            <Image
+              src="/pomp-logo.svg"
+              alt="POMP logo"
+              width={36}
+              height={36}
+              className="h-9 w-9"
+            />
+            <h2 className="text-2xl font-semibold text-white/90">
+              POMP Leaderboard
+            </h2>
+          </div>
           <p className="mt-1 text-sm text-gray-400">
             Native POMP campaigns ranked by claim count from their AO asset
             state.

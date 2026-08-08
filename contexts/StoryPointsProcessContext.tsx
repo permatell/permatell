@@ -7,15 +7,7 @@ import React, {
   useCallback,
   useEffect,
 } from "react";
-import {
-  getAO,
-  getMainnetAO,
-  PROCESS_IDS,
-  MAINNET_PROCESS_IDS,
-  createDataItemSigner,
-  HAS_EXPLICIT_MAINNET_PROCESS_IDS,
-} from "@/lib/ao-config";
-import { withHyperbeamGlobalFetch } from "@/lib/hyperbeamFetch";
+import { getAO, PROCESS_IDS } from "@/lib/ao-config";
 import { useWallet } from "@/contexts/WalletContext";
 import { useNetworkMode } from "@/contexts/NetworkModeContext";
 
@@ -53,14 +45,11 @@ export const StoryPointsProcessProvider: React.FC<{
   const { address } = useWallet();
   const { networkMode } = useNetworkMode();
 
-  const useMainnetStoryPointsProcess =
-    networkMode === "mainnet" && HAS_EXPLICIT_MAINNET_PROCESS_IDS;
-  const useMainnetPerStoryProcesses =
-    networkMode === "mainnet" && !HAS_EXPLICIT_MAINNET_PROCESS_IDS;
-  const processId =
-    useMainnetStoryPointsProcess
-      ? MAINNET_PROCESS_IDS.storyPoints
-      : PROCESS_IDS.storyPoints;
+  // Mainnet author rankings come from Discovery story votes, not the legacy
+  // Story Points registry. Skip dryrun there — it is often empty/wrong and
+  // only produces expected wallet/CU noise (format-for-signing, timeouts).
+  const skipStoryPointsDryrun = networkMode === "mainnet";
+  const processId = PROCESS_IDS.storyPoints;
 
   const parseDryrunData = (res: { Messages?: { Data?: unknown }[] }) => {
     if (res.Messages && res.Messages.length > 0) {
@@ -76,32 +65,8 @@ export const StoryPointsProcessProvider: React.FC<{
 
   const getDryrunResult = useCallback(
     async (tags: { name: string; value: string }[]) => {
-      if (useMainnetPerStoryProcesses) {
+      if (skipStoryPointsDryrun) {
         return {};
-      }
-
-      if (useMainnetStoryPointsProcess) {
-        try {
-          if (globalThis.arweaveWallet) {
-            const signer = createDataItemSigner(globalThis.arweaveWallet);
-            const ao = getMainnetAO(signer)!;
-            const res = await withTimeout(
-              withHyperbeamGlobalFetch(() =>
-                ao.dryrun({
-                  process: processId,
-                  tags,
-                })
-              ),
-              "AO story points read"
-            );
-            return parseDryrunData(res);
-          }
-        } catch (mainnetReadError) {
-          console.warn(
-            "[story-points] mainnet dryrun failed, trying legacy CU",
-            mainnetReadError
-          );
-        }
       }
 
       const { dryrun } = getAO();
@@ -114,13 +79,13 @@ export const StoryPointsProcessProvider: React.FC<{
       );
       return parseDryrunData(res);
     },
-    [useMainnetPerStoryProcesses, useMainnetStoryPointsProcess, processId]
+    [skipStoryPointsDryrun, processId]
   );
 
   const getAllStoryPoints = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      if (useMainnetPerStoryProcesses) {
+      if (skipStoryPointsDryrun) {
         setAllUsersStoryPoints((prev) =>
           Object.keys(prev).length === 0 ? prev : {}
         );
@@ -136,13 +101,13 @@ export const StoryPointsProcessProvider: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [getDryrunResult, useMainnetPerStoryProcesses]);
+  }, [getDryrunResult, skipStoryPointsDryrun]);
 
   const getUserStoryPoints = useCallback(
     async (address: string): Promise<void> => {
       setLoading(true);
       try {
-        if (useMainnetPerStoryProcesses) {
+        if (skipStoryPointsDryrun) {
           setUserStoryPoints(0);
           return;
         }
@@ -163,7 +128,7 @@ export const StoryPointsProcessProvider: React.FC<{
         setLoading(false);
       }
     },
-    [getDryrunResult, useMainnetPerStoryProcesses]
+    [getDryrunResult, skipStoryPointsDryrun]
   );
 
   useEffect(() => {

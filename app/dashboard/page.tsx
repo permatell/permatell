@@ -22,9 +22,11 @@ import { IoMdThumbsUp, IoMdArrowBack, IoMdArrowForward } from "react-icons/io";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaStar } from "react-icons/fa";
 import { Award, RefreshCw } from "lucide-react";
+import Image from "next/image";
 import { useStoryPointsProcess } from "@/contexts/StoryPointsProcessContext";
 import { AuthorAvatar } from "@/components/ui/author-avatar";
 import { ArnsName } from "@/components/ui/arns-name";
+import { useNetworkMode } from "@/contexts/NetworkModeContext";
 import {
   fetchDiscoverPomps,
   fetchPompCampaignInfo,
@@ -32,6 +34,25 @@ import {
   type PompClaimedAsset,
 } from "@/lib/pomp";
 import { safeCoverImageSrc } from "@/lib/utils";
+
+/** Score authors from Discovery stories: +10 per story, +1 per vote. */
+function aggregateAuthorScoresFromStories(
+  stories: Array<{
+    version_data?: { author?: string; votes?: number };
+    author?: string;
+  }>
+): Record<string, number> {
+  const scores: Record<string, number> = {};
+  for (const story of stories) {
+    const author =
+      story.version_data?.author ||
+      (typeof story.author === "string" ? story.author : "");
+    if (!author) continue;
+    const votes = Number(story.version_data?.votes) || 0;
+    scores[author] = (scores[author] || 0) + 10 + votes;
+  }
+  return scores;
+}
 
 function PompDiscoveryCardBody({
   pomp,
@@ -149,6 +170,7 @@ const Dashboard = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [topStories, setTopStories] = useState<any[]>([]);
   const { getAllStoryPoints, allUsersStoryPoints } = useStoryPointsProcess();
+  const { networkMode } = useNetworkMode();
   const [topAuthors, setTopAuthors] = useState<[string, number][]>([]);
   const [isHovering, setIsHovering] = useState(false);
   const [pomps, setPomps] = useState<PompClaimedAsset[]>([]);
@@ -168,6 +190,8 @@ const Dashboard = () => {
   }, [getStories, stories.length, loading]);
 
   useEffect(() => {
+    // Mainnet author board uses Discovery scores; skip Story Points dryrun.
+    if (networkMode === "mainnet") return;
     if (
       !requestedStoryPointsRef.current &&
       Object.keys(allUsersStoryPoints).length === 0
@@ -175,7 +199,7 @@ const Dashboard = () => {
       requestedStoryPointsRef.current = true;
       getAllStoryPoints();
     }
-  }, [getAllStoryPoints, allUsersStoryPoints]);
+  }, [getAllStoryPoints, allUsersStoryPoints, networkMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -236,13 +260,15 @@ const Dashboard = () => {
   }, [pompRefreshNonce]);
 
   useEffect(() => {
-    if (Object.keys(allUsersStoryPoints).length > 0) {
-      const sorted = Object.entries(allUsersStoryPoints)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 3);
-      setTopAuthors(sorted);
-    }
-  }, [allUsersStoryPoints]);
+    const points =
+      networkMode === "mainnet"
+        ? aggregateAuthorScoresFromStories(stories)
+        : allUsersStoryPoints;
+    const sorted = Object.entries(points)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3);
+    setTopAuthors(sorted);
+  }, [allUsersStoryPoints, stories, networkMode]);
 
   useEffect(() => {
     if (stories.length > 0) {
@@ -607,9 +633,18 @@ const Dashboard = () => {
       <div className="mb-10">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold text-white/90">
-              POMP Memories
-            </h2>
+            <div className="flex items-center gap-3">
+              <Image
+                src="/pomp-logo.svg"
+                alt="POMP logo"
+                width={40}
+                height={40}
+                className="h-10 w-10"
+              />
+              <h2 className="text-2xl font-semibold text-white/90">
+                POMP Memories
+              </h2>
+            </div>
             <p className="mt-1 text-sm text-gray-400">
               POAP migrations and native POMP events discovered from Arweave/AO.
             </p>

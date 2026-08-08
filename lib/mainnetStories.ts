@@ -404,8 +404,22 @@ function getHyperbeamReadUrls(): string[] {
   return [...new Set(urls)];
 }
 
-async function fetchHbJson(url: string, timeoutMs = 8_000): Promise<any | null> {
-  if (typeof window === "undefined") return null;
+/** Process IDs confirmed missing or not Permatell stories (session-scoped). */
+const knownNonStoryProcessIds = new Set<string>();
+
+type HbFetchResult = {
+  ok: boolean;
+  notFound: boolean;
+  data: any | null;
+};
+
+async function fetchHbJsonResult(
+  url: string,
+  timeoutMs = 8_000
+): Promise<HbFetchResult> {
+  if (typeof window === "undefined") {
+    return { ok: false, notFound: false, data: null };
+  }
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -414,20 +428,54 @@ async function fetchHbJson(url: string, timeoutMs = 8_000): Promise<any | null> 
       signal: controller.signal,
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (res.status === 404) {
+      return { ok: false, notFound: true, data: null };
+    }
+    if (!res.ok) return { ok: false, notFound: false, data: null };
     const text = await res.text();
-    if (!text) return null;
+    if (!text) return { ok: true, notFound: false, data: null };
     try {
-      return JSON.parse(text);
+      return { ok: true, notFound: false, data: JSON.parse(text) };
     } catch {
       const title = text.replace(/\s+/g, " ").trim();
-      return title ? { title, name: title } : null;
+      return {
+        ok: true,
+        notFound: false,
+        data: title ? { title, name: title } : null,
+      };
     }
   } catch {
-    return null;
+    // Network errors (HTTP/2 protocol, connection closed) — quiet, not "not found".
+    return { ok: false, notFound: false, data: null };
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+async function fetchHbJson(url: string, timeoutMs = 8_000): Promise<any | null> {
+  const result = await fetchHbJsonResult(url, timeoutMs);
+  return result.data;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex++;
+        results[index] = await worker(items[index]);
+      }
+    }
+  );
+  await Promise.all(runners);
+  return results;
 }
 
 function storyFromNowMetadata(
@@ -623,15 +671,33 @@ async function fetchStoryJsonFromNode(
     now?.story_json,
     now?.["story_json"],
   ];
+  for (const candidate of candidates) {
+    const parsed = parseStoryJsonBlob(processId, candidate);
+    if (parsed) return parsed;
+  }
+
+  // Avoid extra /story_json + /story probes when /now already looks empty.
+  const looksLikeStory =
+    Boolean(now?.story_json) ||
+    Boolean(now?.current_version) ||
+    Boolean(now?.title) ||
+    Boolean(now?.["bootloader-title"]) ||
+    Boolean(now?.["Bootloader-Title"]);
+  if (!looksLikeStory && now) {
+    return null;
+  }
+
   const direct = await fetchHbJson(
     `${base}/${processId}~process@1.0/now/story_json`
   );
-  candidates.push(direct, direct?.body, direct?.data);
+  for (const candidate of [direct, direct?.body, direct?.data]) {
+    const parsed = parseStoryJsonBlob(processId, candidate);
+    if (parsed) return parsed;
+  }
   const storyNode = await fetchHbJson(
     `${base}/${processId}~process@1.0/now/story`
   );
-  candidates.push(storyNode?.story_json, storyNode?.body);
-  for (const candidate of candidates) {
+  for (const candidate of [storyNode?.story_json, storyNode?.body]) {
     const parsed = parseStoryJsonBlob(processId, candidate);
     if (parsed) return parsed;
   }
@@ -641,14 +707,24 @@ async function fetchStoryJsonFromNode(
 export async function fetchHyperbeamStory(processId: string): Promise<Story | null> {
   const id = clean(processId);
   if (!id) return null;
+  if (knownNonStoryProcessIds.has(id)) return null;
 
   let lastNow: Record<string, any> | null = null;
   let lastBase = "";
   let best: Story | null = null;
+  let confirmedMissing = false;
 
   for (const base of getHyperbeamReadUrls()) {
-    const now = await fetchHbJson(`${base}/${id}~process@1.0/now`);
-    if (!now || now.body === "not_found") continue;
+    const nowResult = await fetchHbJsonResult(`${base}/${id}~process@1.0/now`);
+    if (nowResult.notFound) {
+      confirmedMissing = true;
+      continue;
+    }
+    const now = nowResult.data;
+    if (!now || now.body === "not_found") {
+      if (now?.body === "not_found") confirmedMissing = true;
+      continue;
+    }
     lastNow = now;
     lastBase = base;
 
@@ -664,6 +740,16 @@ export async function fetchHyperbeamStory(processId: string): Promise<Story | nu
         return preferFresherStory(best, fromJson)!;
       }
     }
+
+    // Skip version-tree probes for processes that never looked like stories.
+    const looksLikeStory =
+      Boolean(fromJson) ||
+      Boolean(now.story_json) ||
+      Boolean(now.current_version) ||
+      Boolean(now.title) ||
+      Boolean(now["bootloader-title"]) ||
+      Boolean(now["Bootloader-Title"]);
+    if (!looksLikeStory) continue;
 
     const storyNow = await fetchHbJson(`${base}/${id}~process@1.0/now/story`);
     const versionsIndex = await fetchHbJson(
@@ -752,6 +838,14 @@ export async function fetchHyperbeamStory(processId: string): Promise<Story | nu
       nodeUrl: lastBase,
     });
     return fallback;
+  }
+
+  // Only cache hard misses — not transient HTTP/2 / network failures.
+  if (confirmedMissing && !lastNow) {
+    knownNonStoryProcessIds.add(id);
+  } else if (lastNow && !storyFromNowMetadata(id, lastNow)) {
+    // /now exists but has no story-shaped metadata (partial GraphQL index).
+    knownNonStoryProcessIds.add(id);
   }
   return null;
 }
@@ -1107,18 +1201,19 @@ export async function hydrateMainnetDiscoveryStories(
     : await indexMainnetDiscoveryStories();
   const byId = new Map(indexed.map((story) => [story.id, story]));
 
-  await Promise.all(
-    indexed.map(async (story) => {
-      if (!isAoProcessId(story.id)) return;
-      try {
-        const remote = await fetchHyperbeamStory(story.id);
-        const current = toCurrentStory(remote);
-        if (current) byId.set(story.id, current);
-      } catch (error) {
-        console.warn("[stories] HyperBEAM discovery read failed", story.id, error);
-      }
-    })
-  );
+  // Bound concurrency so junk/partial process IDs do not flood the Network tab
+  // with parallel 404 / HTTP2 errors.
+  await mapWithConcurrency(indexed, 3, async (story) => {
+    if (!isAoProcessId(story.id)) return;
+    if (knownNonStoryProcessIds.has(story.id)) return;
+    try {
+      const remote = await fetchHyperbeamStory(story.id);
+      const current = toCurrentStory(remote);
+      if (current) byId.set(story.id, current);
+    } catch {
+      // Expected for junk/partial GraphQL indexes; fetchHyperbeamStory is quiet.
+    }
+  });
 
   return [...byId.values()].filter(isValidCurrentStory);
 }

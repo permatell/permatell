@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Award, ExternalLink, Images, ShieldCheck, Sparkles } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { CardContainer } from "@/components/ui/card-container";
 import { Input } from "@/components/ui/input";
@@ -862,7 +863,17 @@ export default function PompPage() {
             <Award className="h-4 w-4" />
             Proof of Memory Protocol
           </div>
-          <h1 className="text-4xl font-bold text-white">POMP</h1>
+          <div className="flex items-center gap-4">
+            <Image
+              src="/pomp-logo.svg"
+              alt="POMP logo — Proof of Memory Protocol"
+              width={72}
+              height={72}
+              className="h-[72px] w-[72px]"
+              priority
+            />
+            <h1 className="text-4xl font-bold text-white">POMP</h1>
+          </div>
           <p className="mt-3 max-w-3xl text-gray-300">
             Migrate existing POAP memories to Arweave or create a new native
             POMP event as a HyperBEAM atomic asset.

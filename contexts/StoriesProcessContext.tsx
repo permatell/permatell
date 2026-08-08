@@ -189,7 +189,9 @@ export const StoriesProcessProvider: React.FC<{
               return parseDryrunData(res);
             }
           } catch (mainnetReadError) {
-            console.warn(
+            // Expected when registry is empty/wrong or wallet cannot format
+            // dryrun for signing; Discovery hydrate covers the author board.
+            console.debug(
               "[stories] mainnet dryrun failed, trying legacy CU",
               mainnetReadError
             );
@@ -470,31 +472,10 @@ export const StoriesProcessProvider: React.FC<{
         setLoading(false);
 
         const mergeAndHydrate = async () => {
-          let nextStories = indexed;
-          if (useMainnetRegistryProcess) {
-            try {
-              const result = await getDryrunResult([
-                { name: "Action", value: "GetStories" },
-              ]);
-              const registryStories = (
-                Array.isArray(result) ? result : []
-              ).filter(isValidCurrentStory);
-              const byId = new Map(
-                registryStories.map((story) => [story.id, story])
-              );
-              for (const story of indexed) {
-                byId.set(story.id, story);
-              }
-              nextStories = Array.from(byId.values());
-              setStories(nextStories);
-            } catch (registryError) {
-              console.warn(
-                "[stories] registry GetStories failed, using per-story Discovery",
-                registryError
-              );
-            }
-          }
-          setStories(await hydrateMainnetDiscoveryStories(nextStories));
+          // Discovery + localStorage already power the mainnet board. Skip the
+          // central registry dryrun — it commonly fails (empty/wrong process,
+          // wallet format-for-signing, CU timeouts) and only adds console noise.
+          setStories(await hydrateMainnetDiscoveryStories(indexed));
         };
 
         void mergeAndHydrate().catch((error) =>
@@ -515,7 +496,7 @@ export const StoriesProcessProvider: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [getDryrunResult, networkMode, useMainnetRegistryProcess]);
+  }, [getDryrunResult, networkMode]);
 
   const getStory = async (payload: {
     story_id: string;

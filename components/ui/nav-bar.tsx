@@ -145,9 +145,16 @@ export function Navbar() {
               </Link>
               <Link
                 href="/pomp"
-                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-colors"
               >
-                POMP
+                <Image
+                  src="/pomp-logo.svg"
+                  alt=""
+                  width={18}
+                  height={18}
+                  className="h-[18px] w-[18px]"
+                />
+                <span>POMP</span>
               </Link>
               <Link
                 href="/author-board"
@@ -182,8 +189,17 @@ export function Navbar() {
                       key={item.href}
                       href={item.href}
                       onClick={() => setMobileMenuOpen(false)}
-                      className="block rounded-md px-3 py-2.5 text-sm text-gray-200 transition-colors hover:bg-white/10 hover:text-white"
+                      className="flex items-center gap-2 rounded-md px-3 py-2.5 text-sm text-gray-200 transition-colors hover:bg-white/10 hover:text-white"
                     >
+                      {item.href === "/pomp" && (
+                        <Image
+                          src="/pomp-logo.svg"
+                          alt=""
+                          width={18}
+                          height={18}
+                          className="h-[18px] w-[18px]"
+                        />
+                      )}
                       {item.label}
                     </Link>
                   ))}
